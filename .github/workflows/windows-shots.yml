@@ -6,6 +6,7 @@ on:
     inputs:
       issue: { description: 'Issue nhận ảnh', default: '208' }
       ref: { description: 'Nhánh vibecut', default: 'desktop/main' }
+      skip_tests: { description: 'Chỉ build, bỏ ctest (~1 giờ)', type: boolean, default: false }
 permissions: { contents: read }
 jobs:
   shots:
@@ -35,7 +36,8 @@ jobs:
         working-directory: vc
         run: |
           source desktop/ci/setup-windows.sh
-          bash desktop/ci/test.sh
+          if [ "${{ inputs.skip_tests }}" = true ]; then cmake --preset ci && cmake --build --preset ci
+          else bash desktop/ci/test.sh; fi
       # Lưu cache cả khi build/test đỏ: lượt sau khỏi build lại ffmpeg/opencv.
       - uses: actions/cache/save@v4
         if: always()
@@ -55,8 +57,9 @@ jobs:
             desktop/app | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u)
           mkdir -p ../out; ok=0; bad=""
           for s in $screens; do
-            if timeout 120 bash desktop/ci/shot.sh "$s" "../out/$s.png" >/dev/null 2>&1 && [ -s "../out/$s.png" ]; then ok=$((ok+1)); else bad="$bad $s"; fi
-          done
+            if timeout 120 bash desktop/ci/shot.sh "$s" "../out/$s.png" >../out/last.log 2>&1 && [ -s "../out/$s.png" ]; then ok=$((ok+1))
+            else bad="$bad $s"; [ -n "${shown:-}" ] || { shown=1; echo "--- lỗi màn $s (exit $?):"; tail -15 ../out/last.log; ls desktop/build/ci/bin 2>&1 | head -20; }; fi
+          done; rm -f ../out/last.log
           echo "chụp được $ok màn; lỗi:${bad:- không}" | tee ../out/KETQUA.txt
       - name: đẩy ảnh + báo
         if: always()
