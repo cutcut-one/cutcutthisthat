@@ -10,12 +10,13 @@ set -uo pipefail
 # ponytail: SIGALRM chỉ giết xcodebuild, tiến trình test con có thể sót lại; cần sạch hơn thì kill cả process group.
 lim(){ perl -e 'alarm shift; exec @ARGV' "$@"; }
 # MODE=mac (scripts/test-mac.sh): scheme CutCutMacTests trên macOS, build CutCutMacSpike trước, cùng cách chia nhóm.
+# Máy CI không đăng nhập Apple ID → tắt ký app (CODE_SIGNING_ALLOWED=NO, #195). Chỉ là bản test, không phải bản phát hành.
 if [ "${MODE:-ios}" = mac ]; then
   T=CutCutMacTests; X=(-project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacTests -destination platform=macOS -derivedDataPath /tmp/dd-mac
-     -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -parallel-testing-enabled NO -quiet)
+     -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -parallel-testing-enabled NO -quiet CODE_SIGNING_ALLOWED=NO)
   [ $# -gt 0 ] && exec perl -e 'alarm shift; exec @ARGV' 3000 xcodebuild test "${X[@]}" "$@"
   lim 3000 xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS -derivedDataPath /tmp/dd-mac \
-    -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet || { echo "BUILD CutCutMacSpike ĐỎ"; exit 1; }
+    -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO || { echo "BUILD CutCutMacSpike ĐỎ"; exit 1; }
 else
   udid=${SIM_UDID:-$(xcrun simctl list devices available -j \
     | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("^iPhone"))][-1].udid')}
