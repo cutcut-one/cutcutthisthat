@@ -1,0 +1,62 @@
+name: windows-shots
+# Chụp các màn app desktop trên máy Windows của GitHub (#208): build nhánh desktop/main, chụp từng màn,
+# đẩy ảnh vào nhánh ci-shots (repo private) + Telegram + comment vào issue. Log PUBLIC: không in nội dung ảnh.
+on:
+  workflow_dispatch:
+    inputs:
+      issue: { description: 'Issue nhận ảnh', default: '208' }
+      ref: { description: 'Nhánh vibecut', default: 'desktop/main' }
+permissions: { contents: read }
+jobs:
+  shots:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults: { run: { shell: bash } }
+    env:
+      GH_TOKEN: ${{ secrets.VIBECUT_PAT }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      TG_THREAD_ID: ${{ secrets.TG_THREAD_ID }}
+      TG_BOT_TOKEN_1: ${{ secrets.TG_BOT_TOKEN_1 }}
+      BOT_NO: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: runner }
+      - uses: actions/checkout@v4
+        with: { repository: nguyenphp/vibecut, token: '${{ secrets.VIBECUT_PAT }}', ref: '${{ inputs.ref }}', path: vc, fetch-depth: 1 }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Qt
+            ~/AppData/Local/vcpkg/archives
+          key: win-qt-vcpkg-${{ hashFiles('vc/desktop/vcpkg.json') }}
+      - name: cài + build + test
+        working-directory: vc
+        run: |
+          source desktop/ci/setup-windows.sh
+          bash desktop/ci/test.sh
+      - name: chụp màn
+        working-directory: vc
+        run: |
+          source desktop/ci/setup-windows.sh >/dev/null
+          # Danh sách màn = mọi tên `--screenshot` app biết (main.cpp + qml).
+          screens=$(grep -rhoE 'cutcutScreenshotScreen *(===|==) *"[a-z0-9-]+"|screen == QStringLiteral\("[a-z0-9-]+"\)|"(home|editor|settings|template)[a-z0-9-]*"' \
+            desktop/app | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u)
+          mkdir -p ../out; ok=0; bad=""
+          for s in $screens; do
+            if timeout 120 bash desktop/ci/shot.sh "$s" "../out/$s.png" >/dev/null 2>&1 && [ -s "../out/$s.png" ]; then ok=$((ok+1)); else bad="$bad $s"; fi
+          done
+          echo "chụp được $ok màn; lỗi:${bad:- không}" | tee ../out/KETQUA.txt
+      - name: đẩy ảnh + báo
+        if: always()
+        working-directory: vc
+        run: |
+          [ -d ../out ] && ls ../out/*.png >/dev/null 2>&1 || { echo "không có ảnh"; exit 1; }
+          n=${{ inputs.issue }}; dir="issue-$n/windows-$(date +%Y%m%d-%H%M)"
+          git config user.name runner; git config user.email runner@users.noreply.github.com
+          if git fetch -q --depth 1 origin ci-shots; then git worktree add -q ../shots FETCH_HEAD
+          else git worktree add -q --detach ../shots && (cd ../shots && git checkout -q --orphan ci-shots && git rm -rfq .); fi
+          mkdir -p "../shots/$dir"; cp ../out/* "../shots/$dir/"
+          (cd ../shots && git add -A && git -c core.hooksPath=/dev/null commit -qm "ảnh windows #$n" && git push -q origin HEAD:ci-shots)
+          bash ../runner/scripts/tg-album.sh "🪟 #$n — ảnh màn Windows" ../out/*.png
+          gh issue comment "$n" -R nguyenphp/vibecut -b "🪟 Ảnh màn Windows (máy GitHub windows-latest): $(cat ../out/KETQUA.txt)
+          📁 https://github.com/nguyenphp/vibecut/tree/ci-shots/$dir" >/dev/null
