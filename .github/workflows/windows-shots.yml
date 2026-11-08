@@ -44,7 +44,9 @@ jobs:
             ~/Qt
             ~/AppData/Local/vcpkg/archives
           key: win-qt-vcpkg-${{ hashFiles('vc/desktop/vcpkg.json') }}-${{ github.run_id }}
+      # Chụp cả khi test đỏ (vd ui_compare_screens timeout vì chưa có ảnh mẫu Mac) — app đã build xong.
       - name: chụp màn
+        if: ${{ !cancelled() }}
         working-directory: vc
         run: |
           source desktop/ci/setup-windows.sh >/dev/null
