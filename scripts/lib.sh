@@ -116,13 +116,20 @@ quota_hdrs() {
     -d '{"model":"claude-haiku-5-5","max_tokens":1,"system":"You are Claude Code, Anthropic'"'"'s official CLI for Claude.","messages":[{"role":"user","content":"hi"}]}' 2>/dev/null \
     | tr -d '\r' | awk -F': *' '{ $1 = tolower($1); print $1 ": " $2 }'
 }
-# Giờ hành chính VN (7h–18h) mà tài khoản đã dùng ≥85% phiên 5h → tạm nghỉ, chừa hạn mức cho owner. exit 0 = phải nghỉ.
-# Không đọc được hạn mức thì cho chạy (fail-open). peak_paused <oauth token> [giờ VN, để test] [mức dùng, để test]
-PEAK_FROM=7; PEAK_TO=18; PEAK_PCT=0.85
+# Tài khoản phải nghỉ (exit 0) khi:
+#  - giờ hành chính VN (7h–18h) và đã dùng ≥85% phiên 5h → chừa hạn mức cho owner; hoặc
+#  - bất kể giờ: đã dùng ≥85% hạn mức 7 ngày mà còn hơn 3 ngày mới reset → khỏi đốt sạch tuần.
+# Không đọc được hạn mức thì cho chạy (fail-open).
+# peak_paused <oauth token> [giờ VN] [h5] [d7] [reset7 epoch] — có từ 3 tham số thì dùng số truyền vào, không gọi API.
+PEAK_FROM=7; PEAK_TO=18; PEAK_PCT=0.85; WEEK_PCT=0.85; WEEK_DAYS=3
 peak_paused() {
-  local h u; h=${2:-$(TZ=Asia/Ho_Chi_Minh date +%H)}; h=$((10#$h))
+  local h u d r q
+  if [ $# -ge 3 ]; then u=$3; d=${4:-}; r=${5:-}
+  else q=$(quota_json "$1"); u=$(jq -r '.h5 // empty' <<<"$q"); d=$(jq -r '.d7 // empty' <<<"$q"); r=$(jq -r '.reset7 // empty' <<<"$q"); fi
+  if [ -n "$d" ] && [ -n "$r" ] && awk -v d="$d" -v p="$WEEK_PCT" -v r="$r" -v n="$(date +%s)" -v k="$WEEK_DAYS" 'BEGIN{exit !(d >= p && r - n > k * 86400)}'; then return 0; fi
+  h=${2:-$(TZ=Asia/Ho_Chi_Minh date +%H)}; h=$((10#$h))
   [ "$h" -ge "$PEAK_FROM" ] && [ "$h" -lt "$PEAK_TO" ] || return 1
-  u=${3-$(usage_5h "$1")}; [ -n "$u" ] || return 1
+  [ -n "$u" ] || return 1
   awk -v u="$u" -v p="$PEAK_PCT" 'BEGIN{exit !(u >= p)}'
 }
 

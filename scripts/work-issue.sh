@@ -40,7 +40,7 @@ esac
 round=0
 while :; do
   # 7h–18h mà acc đã dùng ≥85% phiên 5h → nghỉ như hết hạn mức (job nhường acc khác / dừng), chừa cho owner.
-  if peak_paused "$CLAUDE_CODE_OAUTH_TOKEN"; then echo "acc #${BOT_NO:-?} ≥85% phiên 5h trong giờ hành chính → nghỉ"; QUOTA=1; PEAK=1; break; fi
+  if peak_paused "$CLAUDE_CODE_OAUTH_TOKEN"; then echo "acc #${BOT_NO:-?} chạm ngưỡng nghỉ (85% phiên 5h giờ hành chính, hoặc 85% tuần còn >3 ngày mới reset) → nghỉ"; QUOTA=1; PEAK=1; break; fi
   round=$((round + 1)); c0=$(git rev-list --count HEAD); l0=$(left)
   # Output chỉ ghi ra file — KHÔNG in console.
   # Watchdog trong job: Claude không in gì 65 phút (> trần 1 lệnh Bash 60 phút) → giết, mở phiên mới.
