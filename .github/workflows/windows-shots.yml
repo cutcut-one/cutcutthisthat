@@ -55,12 +55,14 @@ jobs:
           # Windows build ra build/ci-windows (preset ci-windows), shot.sh mặc định tìm build/ci → chỉ thẳng exe.
           export CUTCUT_APP=$(find "$PWD/desktop/build" -name cutcut.exe -path '*ci-windows*' | head -1)
           echo "app: ${CUTCUT_APP:-KHÔNG THẤY}"
+          # Backend Render free ngủ → màn editor chờ HTTP 30s/request rồi vượt trần. Đánh thức trước.
+          for i in 1 2 3 4 5 6; do curl -sf -m 60 -o /dev/null "https://cutcut-backend-n7ki.onrender.com/api/v1/app-config" && { echo "backend thức"; break; }; sleep 10; done
           # Danh sách màn = mọi tên `--screenshot` app biết (main.cpp + qml).
           screens=$(grep -rhoE 'cutcutScreenshotScreen *(===|==) *"[a-z0-9-]+"|screen == QStringLiteral\("[a-z0-9-]+"\)|"(home|editor|settings|template)[a-z0-9-]*"' \
             desktop/app | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u)
           mkdir -p ../out; ok=0; bad=""
           for s in $screens; do
-            if timeout 120 bash desktop/ci/shot.sh "$s" "../out/$s.png" >../out/last.log 2>&1 && [ -s "../out/$s.png" ]; then ok=$((ok+1))
+            if timeout 240 bash desktop/ci/shot.sh "$s" "../out/$s.png" >../out/last.log 2>&1 && [ -s "../out/$s.png" ]; then ok=$((ok+1))
             else bad="$bad $s"; [ -n "${shown:-}" ] || { shown=1; echo "--- lỗi màn $s (exit $?):"; tail -15 ../out/last.log; ls desktop/build 2>&1 | head; }; fi
           done; rm -f ../out/last.log
           echo "chụp được $ok màn; lỗi:${bad:- không}" | tee ../out/KETQUA.txt
