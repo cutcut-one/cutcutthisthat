@@ -10,7 +10,7 @@ permissions: { contents: read }
 jobs:
   shots:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 300   # lần đầu vcpkg build ffmpeg/opencv/x264/x265 từ nguồn ~1.5–2 giờ; có cache thì vài phút
     defaults: { run: { shell: bash } }
     env:
       GH_TOKEN: ${{ secrets.VIBECUT_PAT }}
@@ -23,17 +23,27 @@ jobs:
         with: { path: runner }
       - uses: actions/checkout@v4
         with: { repository: nguyenphp/vibecut, token: '${{ secrets.VIBECUT_PAT }}', ref: '${{ inputs.ref }}', path: vc, fetch-depth: 1 }
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: |
             ~/Qt
             ~/AppData/Local/vcpkg/archives
           key: win-qt-vcpkg-${{ hashFiles('vc/desktop/vcpkg.json') }}
+          restore-keys: win-qt-vcpkg-
       - name: cài + build + test
+        id: build
         working-directory: vc
         run: |
           source desktop/ci/setup-windows.sh
           bash desktop/ci/test.sh
+      # Lưu cache cả khi build/test đỏ: lượt sau khỏi build lại ffmpeg/opencv.
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/Qt
+            ~/AppData/Local/vcpkg/archives
+          key: win-qt-vcpkg-${{ hashFiles('vc/desktop/vcpkg.json') }}-${{ github.run_id }}
       - name: chụp màn
         working-directory: vc
         run: |
