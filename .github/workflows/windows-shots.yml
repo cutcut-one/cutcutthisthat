@@ -36,7 +36,7 @@ jobs:
         working-directory: vc
         run: |
           source desktop/ci/setup-windows.sh
-          if [ "${{ inputs.skip_tests }}" = true ]; then (cd desktop && cmake --preset ci-windows && cmake --build --preset ci-windows)
+          if [ "${{ inputs.skip_tests }}" = true ]; then export PATH="$QT_ROOT/bin:$PATH"; (cd desktop && cmake --preset ci-windows && cmake --build --preset ci-windows)
           else bash desktop/ci/test.sh; fi
       # Lưu cache cả khi build/test đỏ: lượt sau khỏi build lại ffmpeg/opencv.
       - uses: actions/cache/save@v4
