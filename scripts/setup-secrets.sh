@@ -4,7 +4,7 @@
 # ô nào trống thì hỏi (gõ ẩn). Không bao giờ in giá trị ra màn hình.
 # Dùng: bash scripts/setup-secrets.sh [owner/repo]
 set -euo pipefail
-REPO=${1:-cutcut-one/Runner}
+REPO=${1:-cutcut-one/cutcutthisthat}
 ENV_FILE=${RUNNER_SECRETS:-$HOME/.config/cutcut/runner-secrets.env}
 
 NAMES=(
