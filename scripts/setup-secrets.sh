@@ -15,7 +15,7 @@ set -a; . "$ENV_FILE"; set +a
 
 for n in $NAMES; do
   v=${!n:-}
-  [ -n "$v" ] || { read -rsp "$n (Enter = bỏ qua): " v; echo; }
+  [ -n "$v" ] || { read -rsp "$n (Enter = bỏ qua): " v || true; echo; }
   [ -n "$v" ] || { echo "– $n bỏ qua"; continue; }
   printf '%s' "$v" | gh secret set "$n" -R "$REPO" >/dev/null && echo "✓ $n"
 done
