@@ -121,7 +121,9 @@ if [ "${QUOTA:-0}" = 1 ]; then ic="⏸"; st="hết hạn mức, tạm dừng"; e
 score=$(grep -m1 -E '^ĐIỂM:' <<<"$summary" | sed -E 's/ĐIỂM: *([0-9.]+\/10) *\| *TỰ TIN: *([0-9]+%)/⭐ \1 · 🎯 \2 · /')
 bad=$(grep -E '^✘ Task' <<<"$summary" | head -5 | sed 's/^✘/❌/')
 kb='[[{"text":"🧠 Queenie gỡ","callback_data":"cuu:'"$ISSUE"'"},{"text":"🔁 Chạy lại","callback_data":"lai:'"$ISSUE"'"},{"text":"🛑 Bỏ","callback_data":"bo:'"$ISSUE"'"}]]'
-if [ "$ic" = "⚠️" ]; then tg --kb "$kb" "$ic **#$ISSUE $st** — $title"$'\n'"$score$(LC_ALL=C printf '💰 $%.2f · ⏱ %d′' "${cost:-0}" "$mins")${bad:+$'\n'$bad}"$'\n'"✍️ Hoặc trả lời tin này để gợi ý cách làm"; fi
+if [ "$ic" = "⚠️" ]; then tg --kb "$kb" "$ic **#$ISSUE $st** — $title"$'\n'"$score$(LC_ALL=C printf '💰 $%.2f · ⏱ %d′' "${cost:-0}" "$mins")${bad:+$'\n'$bad}"$'\n'"✍️ Hoặc trả lời tin này để gợi ý cách làm"
+# Owner muốn biết ngay từng task xong (11/11): báo cả ✅ xong hẳn và 🔄 xong một phần.
+elif [ "$ic" = "✅" ] || [ "$ic" = "🔄" ]; then tg "$ic **#$ISSUE $st** — $title"$'\n'"$score$(LC_ALL=C printf '💰 $%.2f · ⏱ %d′' "${cost:-0}" "$mins")${pr:+$'\n'"🔗 $pr"}${bad:+$'\n'$bad}"; fi
 if [ "${QUOTA:-0}" = 1 ]; then
   gh issue comment "$ISSUE" -R "$REPO" --body "Runner: ${PEAK:+tài khoản đã dùng ≥85% phiên 5h trong giờ 7h–18h, }hết hạn mức Claude, dừng. Giữ \`ci-run\`, lượt sau làm tiếp." >/dev/null
 elif [ "$l" = 0 ]; then gh issue close "$ISSUE" -R "$REPO" --comment "Xong hết task.${pr:+ PR: $pr}" >/dev/null
