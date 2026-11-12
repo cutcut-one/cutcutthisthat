@@ -1,0 +1,31 @@
+name: domain-watch
+# Canh cutcut.space sau khi chuyển domain cho Tevo: DNS phải còn ở Cloudflare của owner,
+# CDN/web/app-ads/universal link phải trả 200. Hỏng → báo Telegram (mỗi lượt hỏng báo lại, tới khi sửa).
+on:
+  schedule: [{ cron: '*/30 * * * *' }]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      TG_THREAD_ID: ${{ secrets.TG_THREAD_ID }}
+      TG_BOT_TOKEN_1: ${{ secrets.TG_BOT_TOKEN_1 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: kiểm
+        run: |
+          bad=""
+          ns=$(dig +short NS cutcut.space | sort | tr '\n' ' ')
+          [ "$ns" = "dax.ns.cloudflare.com. sky.ns.cloudflare.com. " ] || bad="$bad"$'\n'"• Nameserver đổi: ${ns:-trống} (phải là dax/sky.ns.cloudflare.com)"
+          for u in https://cdn.cutcut.space/assets/badges/badge_11.png https://cutcut.space/ \
+                   https://cutcut.space/app-ads.txt https://cutcut.space/.well-known/apple-app-site-association; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$u" || echo 000)
+            [ "$c" = 200 ] || bad="$bad"$'\n'"• $u → $c"
+          done
+          if [ -n "$bad" ]; then
+            echo "HỎNG"; BOT_NO=1 bash scripts/tg.sh "🚨 **cutcut.space có vấn đề**$bad"; exit 1
+          fi
+          echo "ổn"
