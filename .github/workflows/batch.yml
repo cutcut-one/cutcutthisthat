@@ -12,6 +12,7 @@ on:
       seed: { description: 'earlier output tags to unpack first (space separated)', default: '' }
       par: { description: 'max parallel jobs', default: '12' }
       args: { description: 'extra tool flags', default: '' }
+      list: { description: 'explicit shard specs i/N (space separated), overrides shards', default: '' }
 
 env:
   GH_TOKEN: ${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}
@@ -26,7 +27,8 @@ jobs:
     steps:
       - id: m
         run: |
-          echo "m=$(jq -cn "[range(${{ inputs.shards }})]")" >> "$GITHUB_OUTPUT"
+          L="${{ inputs.list }}"; [ -n "$L" ] || L=$(seq -s ' ' -f "%g/${{ inputs.shards }}" 0 $(( ${{ inputs.shards }} - 1 )))
+          echo "m=$(jq -cn --arg l "$L" '$l|split(" ")|map(select(length>0))')" >> "$GITHUB_OUTPUT"
           gh release view "${{ inputs.tag }}" -R "$DATA" >/dev/null 2>&1 || gh release create "${{ inputs.tag }}" -R "$DATA" --notes "" >/dev/null
 
   run:
@@ -68,11 +70,12 @@ jobs:
         env: { CHROME: /usr/bin/google-chrome, ONLY: '${{ inputs.only }}', TPL_ARGS: '${{ inputs.args }}' }
         run: |
           until=$(( $(date +%s) + $(python3 -c "print(int(${{ inputs.hours }}*3600))") ))
-          bash w/code/scripts/kho/runner_${{ inputs.mode }}.sh "${{ matrix.shard }}/${{ inputs.shards }}" "$PWD/o" "$until" ${{ inputs.kinds }}
+          bash w/code/scripts/kho/runner_${{ inputs.mode }}.sh "${{ matrix.shard }}" "$PWD/o" "$until" ${{ inputs.kinds }}
       - name: upload
         if: always()
         run: |
           [ -f o/result.tgz ] || exit 0
-          cp o/result.tgz "s${{ matrix.shard }}-${{ github.run_attempt }}.tgz"
-          gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "s${{ matrix.shard }}-${{ github.run_attempt }}.tgz" >/dev/null
+          N="s$(echo "${{ matrix.shard }}" | tr / _)-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+          cp o/result.tgz "$N"
+          gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$N" >/dev/null
           echo "uploaded $(du -h o/result.tgz | cut -f1)"
