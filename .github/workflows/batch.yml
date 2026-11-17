@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       kinds: { description: 'job kinds (space separated)', required: true }
-      shards: { description: 'parallel shards', default: '16' }
+      shards: { description: 'parallel shards', default: '12' }
       tag: { description: 'output release tag', required: true }
       only: { description: 'trial: comma list (forces)', default: '' }
       hours: { description: 'stop starting work after N hours', default: '4.8' }
@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
+      max-parallel: 12 # 8 slots stay free for the other bots (20 total)
       matrix: { shard: '${{ fromJSON(needs.prep.outputs.m) }}' }
     steps:
       - uses: actions/checkout@v4
