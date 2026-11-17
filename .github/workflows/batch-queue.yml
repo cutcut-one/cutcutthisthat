@@ -1,0 +1,18 @@
+name: batch-queue
+# Starts the next queued batch run (repo variable BATCH_QUEUE = JSON list of input objects) once no batch run is active.
+on:
+  schedule: [{ cron: '*/10 * * * *' }]
+  workflow_dispatch:
+jobs:
+  next:
+    runs-on: ubuntu-latest
+    env: { GH_TOKEN: '${{ secrets.BATCH_TOKEN }}', R: '${{ github.repository }}', Q: '${{ vars.BATCH_QUEUE }}' }
+    steps:
+      - run: |
+          [ -n "$Q" ] && [ "$(jq length <<<"$Q")" -gt 0 ] || { echo "queue empty"; exit 0; }
+          busy=$(gh run list -R "$R" -w batch.yml --json status --jq '[.[]|select(.status!="completed")]|length')
+          [ "$busy" = 0 ] || { echo "busy $busy"; exit 0; }
+          args=$(jq -r '.[0]|to_entries|map("-f \(.key)=\(.value|@sh)")|join(" ")' <<<"$Q")
+          eval gh workflow run batch.yml -R "$R" $args
+          gh variable set BATCH_QUEUE -R "$R" -b "$(jq -c '.[1:]' <<<"$Q")"
+          echo "started 1, left $(jq '.[1:]|length' <<<"$Q")"

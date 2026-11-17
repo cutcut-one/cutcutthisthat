@@ -8,6 +8,10 @@ on:
       tag: { description: 'output release tag', required: true }
       only: { description: 'trial: comma list (forces)', default: '' }
       hours: { description: 'stop starting work after N hours', default: '4.8' }
+      mode: { description: 'bake | tpl', default: 'bake' }
+      seed: { description: 'earlier output tags to unpack first (space separated)', default: '' }
+      par: { description: 'max parallel jobs', default: '12' }
+      args: { description: 'extra tool flags', default: '' }
 
 env:
   GH_TOKEN: ${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}
@@ -31,7 +35,7 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      max-parallel: 12 # 8 slots stay free for the other bots (20 total)
+      max-parallel: ${{ fromJSON(inputs.par) }} # <= 12: 8 slots stay free for the other bots (20 total)
       matrix: { shard: '${{ fromJSON(needs.prep.outputs.m) }}' }
     steps:
       - uses: actions/checkout@v4
@@ -57,12 +61,14 @@ jobs:
         run: |
           mkdir -p o && gh release download input -R "$DATA" -D o
           rm -rf w/vibeart-src/kho/media && tar xzf o/media.tgz -C w/vibeart-src/kho && rm o/media.tgz
+          mkdir -p o/tpl o/seed
+          for t in ${{ inputs.seed }}; do gh release download "$t" -R "$DATA" -p 's*.tgz' -D o/seed --clobber; for f in o/seed/*.tgz; do tar xzf "$f" -C o/tpl; done; rm -f o/seed/*; done
           [ -z "${{ inputs.only }}" ] || : > o/ledger.jsonl
       - name: work
-        env: { CHROME: /usr/bin/google-chrome, ONLY: '${{ inputs.only }}' }
+        env: { CHROME: /usr/bin/google-chrome, ONLY: '${{ inputs.only }}', TPL_ARGS: '${{ inputs.args }}' }
         run: |
           until=$(( $(date +%s) + $(python3 -c "print(int(${{ inputs.hours }}*3600))") ))
-          bash w/code/scripts/kho/runner_bake.sh "${{ matrix.shard }}/${{ inputs.shards }}" "$PWD/o" "$until" ${{ inputs.kinds }}
+          bash w/code/scripts/kho/runner_${{ inputs.mode }}.sh "${{ matrix.shard }}/${{ inputs.shards }}" "$PWD/o" "$until" ${{ inputs.kinds }}
       - name: upload
         if: always()
         run: |
