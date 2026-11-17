@@ -9,7 +9,7 @@ on:
       tag: { description: 'output release tag', required: true }
       only: { description: 'trial: comma list (forces)', default: '' }
       hours: { description: 'stop starting work after N hours', default: '4.8' }
-      mode: { description: 'bake | tpl', default: 'bake' }
+      mode: { description: 'bake | tpl | shot (kinds = scene tile ranges AAA-BBB, PNGs to the release)', default: 'bake' }
       seed: { description: 'earlier output tags to unpack first (space separated)', default: '' }
       par: { description: 'max parallel jobs', default: '12' }
       args: { description: 'extra tool flags', default: '' }
