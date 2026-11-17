@@ -1,4 +1,5 @@
 name: batch
+run-name: batch ${{ inputs.tag }} ${{ inputs.mode }} ${{ inputs.kinds }}
 # Generic sharded batch job. Repo is PUBLIC: steps print counts only, results go to a private release, never artifacts.
 on:
   workflow_dispatch:
