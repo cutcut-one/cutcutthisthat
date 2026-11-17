@@ -1,0 +1,70 @@
+name: batch
+# Generic sharded batch job. Repo is PUBLIC: steps print counts only, results go to a private release, never artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      kinds: { description: 'job kinds (space separated)', required: true }
+      shards: { description: 'parallel shards', default: '16' }
+      tag: { description: 'output release tag', required: true }
+      only: { description: 'trial: comma list (forces)', default: '' }
+      hours: { description: 'stop starting work after N hours', default: '4.8' }
+
+env:
+  GH_TOKEN: ${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}
+  CODE: ${{ vars.BATCH_CODE_REPO }}
+  REF: ${{ vars.BATCH_CODE_REF }}
+  DATA: ${{ vars.BATCH_DATA_REPO }}
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs: { m: '${{ steps.m.outputs.m }}' }
+    steps:
+      - id: m
+        run: |
+          echo "m=$(jq -cn "[range(${{ inputs.shards }})]")" >> "$GITHUB_OUTPUT"
+          gh release view "${{ inputs.tag }}" -R "$DATA" >/dev/null 2>&1 || gh release create "${{ inputs.tag }}" -R "$DATA" --notes "" >/dev/null
+
+  run:
+    needs: prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix: { shard: '${{ fromJSON(needs.prep.outputs.m) }}' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE }}
+          ref: ${{ env.REF }}
+          token: ${{ env.GH_TOKEN }}
+          path: w/code
+          sparse-checkout: |
+            scripts/kho
+            scripts/parity
+            shared/kho
+            shared/contract
+      - uses: actions/checkout@v4
+        with: { repository: '${{ env.DATA }}', token: '${{ env.GH_TOKEN }}', path: w/vibeart-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: deps
+        run: |
+          sudo sysctl -qw kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get -qq update >/dev/null && sudo apt-get -qq install -y ffmpeg webp fonts-noto-color-emoji python3-numpy python3-pil >/dev/null
+      - name: input
+        run: |
+          mkdir -p o && gh release download input -R "$DATA" -D o
+          [ -z "${{ inputs.only }}" ] || : > o/ledger.jsonl
+      - name: work
+        env: { CHROME: /usr/bin/google-chrome, ONLY: '${{ inputs.only }}' }
+        run: |
+          until=$(( $(date +%s) + $(python3 -c "print(int(${{ inputs.hours }}*3600))") ))
+          bash w/code/scripts/kho/runner_bake.sh "${{ matrix.shard }}/${{ inputs.shards }}" "$PWD/o" "$until" ${{ inputs.kinds }}
+      - name: upload
+        if: always()
+        run: |
+          [ -f o/result.tgz ] || exit 0
+          cp o/result.tgz "s${{ matrix.shard }}-${{ github.run_attempt }}.tgz"
+          gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "s${{ matrix.shard }}-${{ github.run_attempt }}.tgz" >/dev/null
+          echo "uploaded $(du -h o/result.tgz | cut -f1)"
