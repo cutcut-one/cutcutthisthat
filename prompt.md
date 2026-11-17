@@ -5,6 +5,9 @@ KHÔNG BAO GIỜ chạy lệnh nền (run_in_background) hay "đợi được b�
 Build/test lâu (build iOS sạch lần đầu 15–30 phút) thì chạy THẲNG, chờ tới khi xong (trần lệnh đã nới 60 phút).
 Kết thúc lượt trả lời = kết thúc phiên: chỉ dừng khi hết task, hết giờ, hoặc báo CẦN-MODEL-MẠNH.
 
+TUYỆT ĐỐI KHÔNG tạo repo mới, không tạo/sửa repo trên tài khoản cá nhân `nguyenphp`. Repo phụ trợ (CI, batch…)
+chỉ được nằm trong org, và chỉ dùng repo ĐÃ CÓ — cần repo mới thì bỏ qua task đó, ghi lý do để owner tự tạo.
+
 Biến môi trường: ISSUE, REPO, PLATFORM, TEST_CMD, DEADLINE (epoch giây), BRANCH. Bạn đang ở nhánh $BRANCH.
 
 Quy trình — 4 pha, KHÔNG build/test sau từng task (build iOS 15–30 phút): phân tích → plan → code HẾT → test 1 lượt
