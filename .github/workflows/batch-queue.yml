@@ -11,7 +11,7 @@ jobs:
       - run: |
           [ -n "$Q" ] && [ "$(jq length <<<"$Q")" -gt 0 ] || { echo "queue empty"; exit 0; }
           busy=$(gh run list -R "$R" -w batch.yml --json status,displayTitle --jq '[.[]|select(.status!="completed" and (.displayTitle|test(" shot ")|not))]|length')
-          [ "$busy" = 0 ] || { echo "busy $busy"; exit 0; }
+          [ "$busy" -lt "${MAXRUNS:-3}" ] || { echo "busy $busy"; exit 0; }  # ponytail: tối đa MAXRUNS lượt song song; max-parallel từng lượt + trần org tự giới hạn máy
           args=$(jq -r '.[0]|to_entries|map("-f \(.key)=\(.value|@sh)")|join(" ")' <<<"$Q")
           eval gh workflow run batch.yml -R "$R" $args
           gh variable set BATCH_QUEUE -R "$R" -b "$(jq -c '.[1:]' <<<"$Q")"
