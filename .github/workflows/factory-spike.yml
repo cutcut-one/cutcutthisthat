@@ -1,0 +1,60 @@
+name: factory-spike
+# F02: thử CutCut chạy không người trên runner macOS (build + mở chế độ agent + MCP dựng 1 clip). Chỉ chạy tay.
+# Repo PUBLIC: log chỉ in dòng "FACTORY …" (bước, giây, tên tool, mã lỗi ngắn). Không upload artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      ref: { default: main }
+      runs_on: { default: macos-15 }
+permissions: { contents: read }
+jobs:
+  spike:
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 120
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: runner }
+      - uses: actions/checkout@v4
+        with: { repository: nguyenphp/vibecut, ref: '${{ inputs.ref }}', token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
+      - name: build
+        working-directory: vibecut
+        run: |
+          t=$(date +%s)
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
+               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO > /tmp/build.log 2>&1; then
+            echo "FACTORY build ok $(( $(date +%s) - t ))"
+          else
+            echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"; exit 1
+          fi
+      - name: app
+        run: |
+          app=$(find /tmp/dd-mac/Build/Products -maxdepth 2 -name '*.app' | head -1)
+          codesign --force --deep -s - "$app" >/dev/null 2>&1 && echo "FACTORY adhoc_sign ok" || echo "FACTORY adhoc_sign fail"
+          bid=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")
+          echo "APP=$app" >> "$GITHUB_ENV"; echo "FACTORY bundle $bid"
+          bash runner/scripts/factory/grant-tcc.sh "$bid"
+          command -v ffmpeg >/dev/null || brew install -q ffmpeg >/dev/null 2>&1; echo "FACTORY ffmpeg $(command -v ffmpeg >/dev/null && echo ok || echo fail)"
+      - name: launch
+        run: |
+          t=$(date +%s)
+          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=2400 --stdout /tmp/app.log --stderr /tmp/app.err "$APP"
+          for i in $(seq 1 90); do grep -q 'HARNESS agent READY' /tmp/app.log 2>/dev/null && break; sleep 2; done
+          line=$(grep -m1 'HARNESS agent READY' /tmp/app.log || true)
+          [ -n "$line" ] || { echo "FACTORY ready fail $(( $(date +%s) - t )) running=$(pgrep -f "$APP" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"; exit 1; }
+          port=$(sed -E 's/.*port=([0-9]+).*/\1/' <<<"$line"); key=$(sed -E 's/.*key=([^ ]+).*/\1/' <<<"$line"); folder=$(sed -E 's/.*folder=(.*)$/\1/' <<<"$line")
+          echo "::add-mask::$key"
+          { echo "MCP_PORT=$port"; echo "MCP_KEY=$key"; echo "MCP_FOLDER=$folder"; } >> "$GITHUB_ENV"
+          echo "FACTORY ready ok $(( $(date +%s) - t )) port=$port"
+      - name: samples
+        run: |
+          t=$(date +%s); bash runner/scripts/factory/make-samples.sh "$MCP_FOLDER/in" | sed 's/^/FACTORY samples /'
+          echo "FACTORY samples ok $(( $(date +%s) - t )) n=$(ls "$MCP_FOLDER/in" | wc -l | tr -d ' ')"
+      - name: mcp
+        run: python3 runner/scripts/factory/spike.py "$MCP_PORT" "$MCP_KEY" "$MCP_FOLDER"
+      - name: after
+        if: always()
+        run: |
+          echo "FACTORY app_running $(pgrep -f "${APP:-none}" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"
+          echo "FACTORY app_err_lines $(wc -l < /tmp/app.err 2>/dev/null || echo 0) speech_denied=$(grep -ci 'speech.*\(denied\|not authorized\)' /tmp/app.err /tmp/app.log 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')"
