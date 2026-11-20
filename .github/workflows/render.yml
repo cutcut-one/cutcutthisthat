@@ -35,6 +35,7 @@ jobs:
           sparse-checkout: |
             scripts/kho
             scripts/assets
+            scripts/transitions
             shared/kho
       - id: m
         env: { ONLY: '${{ inputs.only }}' }
@@ -92,6 +93,7 @@ jobs:
           sparse-checkout: |
             scripts/kho
             scripts/assets
+            scripts/transitions
             shared/kho
       - name: input
         run: |

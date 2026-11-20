@@ -15,8 +15,11 @@ jobs:
             [ -n "$Q" ] && [ "$(jq length <<<"$Q")" -gt 0 ] || { echo "queue empty"; exit 0; }
             busy=$(gh run list -R "$R" -w batch.yml --json status,displayTitle --jq '[.[]|select(.status!="completed" and (.displayTitle|test(" shot ")|not))]|length')
             [ "$busy" -lt "${MAXRUNS:-6}" ] || { echo "busy $busy"; exit 0; }  # ponytail: tối đa MAXRUNS lượt song song; max-parallel từng lượt + trần org tự giới hạn máy
-            args=$(jq -r '.[0]|to_entries|map("-f \(.key)=\(.value|@sh)")|join(" ")' <<<"$Q")
-            eval gh workflow run batch.yml -R "$R" $args
+            # mode tplrender → render.yml (macOS); khoá kinds/mode/hours… không có ở render.yml thì bỏ
+            wf=batch.yml; [ "$(jq -r '.[0].mode' <<<"$Q")" = tplrender ] && wf=render.yml
+            keep='["tag","seed","shards","list","only","par","hours","runs_on"]'; [ $wf = batch.yml ] && keep=null
+            args=$(jq -r --argjson k "$keep" '.[0]|to_entries|map(select($k==null or (.key as $x|$k|index($x))))|map("-f \(.key)=\(.value|@sh)")|join(" ")' <<<"$Q")
+            eval gh workflow run $wf -R "$R" $args
             gh variable set BATCH_QUEUE -R "$R" -b "$(jq -c '.[1:]' <<<"$Q")"
             echo "started 1, left $(jq '.[1:]|length' <<<"$Q")"
             sleep 20  # chờ run mới hiện trong run list rồi mới đếm busy
