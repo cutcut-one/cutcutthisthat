@@ -40,6 +40,7 @@ jobs:
             scripts/assets
             scripts/transitions
             shared/kho
+            shared/contract
       - id: m
         env: { ONLY: '${{ inputs.only }}' }
         run: |
@@ -105,6 +106,7 @@ jobs:
             scripts/assets
             scripts/transitions
             shared/kho
+            shared/contract
       - name: input
         run: |
           mkdir -p o/app
