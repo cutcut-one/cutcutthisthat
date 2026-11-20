@@ -80,3 +80,12 @@ jobs:
           cp o/result.tgz "$N"
           gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$N" >/dev/null
           echo "uploaded $(du -h o/result.tgz | cut -f1)"
+
+  # Lô xong (kể cả lỗi) → gọi hàng chờ ngay; cron 10' của GitHub hay bị bỏ lượt khi tải nặng.
+  next-batch:
+    if: always()
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - env: { GH_TOKEN: '${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}' }
+        run: gh workflow run batch-queue.yml -R "${{ github.repository }}" && echo "đã gọi hàng chờ" || echo "gọi hàng chờ lỗi"
