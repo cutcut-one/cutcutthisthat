@@ -24,6 +24,8 @@ jobs:
           # Vá tạm cho Xcode 26.3 (runner) — Xcode 27 local không báo. Chỉ sửa bản checkout, không commit vibecut.
           f=ios/CutCut/CutCut/MacSpike/MacMCPTools+Styles.swift
           sed -i '' 's/existingUserAudio(_ state: MacAppState? = MacAIController.shared.state) -> \[String\] {/existingUserAudio(_ state: MacAppState? = nil) -> [String] {/; s/^        guard let state else { return \[\] }$/        guard let state = state ?? MacAIController.shared.state else { return [] }/' "$f"
+          sed -i '' 's/for (label, t) in \[("intro", intro), ("climax", climax), ("outro", outro)\] {/for (label, t) in [("intro", intro), ("climax", climax), ("outro", outro)] as [(String, Double?)] {/' ios/CutCut/CutCut/MacSpike/MacMusicPreview.swift
+          echo "FACTORY patch2 $(grep -c 'as \[(String, Double?)\]' ios/CutCut/CutCut/MacSpike/MacMusicPreview.swift)"
           echo "FACTORY patch $(grep -c 'state ?? MacAIController.shared.state' "$f")"
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; echo "FACTORY xcode $(xcodebuild -version | head -1 | tr ' ' _) all=$(ls -d /Applications/Xcode*.app | xargs -n1 basename | tr '\n' ,)"
           if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
