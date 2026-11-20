@@ -51,7 +51,18 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
+      # Động cơ = biến repo RUNNER_ENGINE (claude | codex). Codex qua proxy xingchi (secret XINGCHI_API_KEY), model gpt-6.1-sol.
+      - name: codex
+        if: vars.RUNNER_ENGINE == 'codex'
+        run: |
+          npm i -g --silent @openai/codex
+          mkdir -p ~/.codex
+          printf '%s\n' 'model = "gpt-6.1-sol"' 'model_provider = "xingchi"' 'model_reasoning_effort = "high"' '' \
+            '[model_providers.xingchi]' 'name = "xingchi"' 'base_url = "https://api.xingchiapi.com/v1"' \
+            'env_key = "XINGCHI_API_KEY"' 'wire_api = "responses"' > ~/.codex/config.toml
+          echo "codex $(codex --version 2>/dev/null | head -1)"
       - name: claude + superpowers
+        if: vars.RUNNER_ENGINE != 'codex'
         run: |
           npm i -g --silent @anthropic-ai/claude-code
           claude plugin marketplace add anthropics/claude-plugins-official >/dev/null
@@ -90,6 +101,8 @@ jobs:
           TOK_2: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_2 }}
           TOK_3: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}
           TOK_0: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ENGINE: ${{ vars.RUNNER_ENGINE || 'claude' }}
+          XINGCHI_API_KEY: ${{ secrets.XINGCHI_API_KEY }}
           # Build/test iOS sạch lần đầu > 10 phút: nới trần lệnh Bash lên 60 phút để Claude chạy THẲNG, không đẩy nền.
           BASH_DEFAULT_TIMEOUT_MS: '3600000'
           BASH_MAX_TIMEOUT_MS: '3600000'
@@ -99,6 +112,8 @@ jobs:
           export DEADLINE=$(( $(date +%s) + 330 * 60 ))
           export TEST_CMD=$(jq -r --arg p "$PLATFORM" '.[$p].test' ../runner/platforms.json)
           toks=(); nos=(); i=0; for t in "$TOK_1" "$TOK_2" "$TOK_3" "$TOK_0"; do i=$((i+1)); [ -n "$t" ] && { toks+=("$t"); nos+=($(( i % 4 ))); }; done
+          # Codex: 1 "tài khoản" duy nhất (key xingchi), bỏ xoay token Claude.
+          if [ "$ENGINE" = codex ]; then [ -n "$XINGCHI_API_KEY" ] || { echo "thiếu secret XINGCHI_API_KEY"; exit 1; }; toks=(codex); nos=(1); fi
           [ ${#toks[@]} -gt 0 ] || { echo "thiếu secret CLAUDE_CODE_OAUTH_TOKEN_1..3"; exit 1; }
           # Rải issue đều cho các tài khoản; acc hết hạn mức thì đổi acc kế tiếp, hết cả thì dừng. Không in token.
           source ../runner/scripts/lib.sh

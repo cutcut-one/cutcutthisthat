@@ -40,17 +40,32 @@ esac
 round=0
 while :; do
   # 7h–18h mà acc đã dùng ≥85% phiên 5h → nghỉ như hết hạn mức (job nhường acc khác / dừng), chừa cho owner.
-  if peak_paused "$CLAUDE_CODE_OAUTH_TOKEN"; then echo "acc #${BOT_NO:-?} chạm ngưỡng nghỉ (85% phiên 5h giờ hành chính, hoặc 85% tuần còn >3 ngày mới reset) → nghỉ"; QUOTA=1; PEAK=1; break; fi
+  if [ "${ENGINE:-claude}" != codex ] && peak_paused "$CLAUDE_CODE_OAUTH_TOKEN"; then echo "acc #${BOT_NO:-?} chạm ngưỡng nghỉ (85% phiên 5h giờ hành chính, hoặc 85% tuần còn >3 ngày mới reset) → nghỉ"; QUOTA=1; PEAK=1; break; fi
   round=$((round + 1)); c0=$(git rev-list --count HEAD); l0=$(left)
   # Output chỉ ghi ra file — KHÔNG in console.
   # Watchdog trong job: Claude không in gì 65 phút (> trần 1 lệnh Bash 60 phút) → giết, mở phiên mới.
   # Bỏ chặn quyền nhưng CẤM CỨNG lệnh không đảo ngược được: push main/force, merge PR, gọi API/curl ra ngoài, đụng secret.
-  run_with_idle_kill 3900 "../claude-$round.jsonl" -- claude -p "$(cat ../runner/prompt.md)${NUDGE:+$'\n\n'$NUDGE}" --model "$MODEL" \
-    --dangerously-skip-permissions --add-dir /tmp --output-format stream-json --verbose \
-    --disallowedTools "Bash(git push origin main*)" "Bash(git push origin HEAD:main*)" "Bash(git push --force*)" \
-      "Bash(git push -f*)" "Bash(git push origin desktop/*)" "Bash(git push origin HEAD:desktop/*)" "Bash(gh pr merge*)" "Bash(gh api*)" "Bash(gh secret*)" "Bash(gh repo*)" "Bash(curl*)" \
-      "Bash(wget*)" "Bash(env*)" "Bash(printenv*)" ScheduleWakeup Monitor CronCreate TaskOutput 2>> ../claude.err
+  if [ "${ENGINE:-claude}" = codex ]; then
+    # Codex (proxy xingchi): không có --disallowedTools → chặn bằng PATH guard (gh/curl/wget/env) + git pre-push hook (lib.sh codex_guard).
+    codex_guard
+    eff=high; [ "$MODEL" = opus ] && eff=xhigh
+    PATH="/tmp/codex-guard:$PATH" run_with_idle_kill 3900 "../claude-$round.jsonl" -- codex exec --json \
+      --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$PWD" -c model_reasoning_effort="$eff" \
+      "$(cat ../runner/prompt.md)${NUDGE:+$'\n\n'$NUDGE}" 2>> ../claude.err
+    rc=$?
+    # Quy về dạng kết quả của Claude ({is_error, result}) để phần dưới dùng chung.
+    jq -cs '{is_error: ((map(select(.type=="turn.completed"))|length)==0),
+             result: ([.[]|select(.type=="item.completed" and .item.type=="agent_message")|.item.text]|last // ""),
+             error: ([.[]|select(.type=="error" or .type=="turn.failed")|tostring]|last // "")}' \
+      "../claude-$round.jsonl" > "../claude-$round.json" 2>/dev/null || echo '{"is_error":true}' > "../claude-$round.json"
+  else
+    run_with_idle_kill 3900 "../claude-$round.jsonl" -- claude -p "$(cat ../runner/prompt.md)${NUDGE:+$'\n\n'$NUDGE}" --model "$MODEL" \
+      --dangerously-skip-permissions --add-dir /tmp --output-format stream-json --verbose \
+      --disallowedTools "Bash(git push origin main*)" "Bash(git push origin HEAD:main*)" "Bash(git push --force*)" \
+        "Bash(git push -f*)" "Bash(git push origin desktop/*)" "Bash(git push origin HEAD:desktop/*)" "Bash(gh pr merge*)" "Bash(gh api*)" "Bash(gh secret*)" "Bash(gh repo*)" "Bash(curl*)" \
+        "Bash(wget*)" "Bash(env*)" "Bash(printenv*)" ScheduleWakeup Monitor CronCreate TaskOutput 2>> ../claude.err
   rc=$?; grep '"type":"result"' "../claude-$round.jsonl" | tail -1 > "../claude-$round.json"
+  fi
   l1=$(left); echo "issue #$ISSUE vòng $round ($MODEL): exit=$rc còn $l1 task"
   if [ "$rc" = 124 ]; then
     idle=$(( ${idle:-0} + 1 )); echo "im 65 phút, khởi động lại ($idle/3)"
@@ -61,7 +76,7 @@ while :; do
   # Hết hạn mức Claude: dừng hẳn, KHÔNG coi là bế tắc (giữ ci-run cho lượt sau).
   # Chỉ xét khi phiên kết thúc LỖI (is_error / không ra JSON), kẻo chữ "429" trong tóm tắt bình thường bị bắt nhầm.
   if ! jq -e '.is_error == false' "../claude-$round.json" >/dev/null 2>&1 \
-     && cat "../claude-$round.json" <(tail -n 3 "../claude-$round.jsonl") ../claude.err 2>/dev/null | grep -qiE 'usage limit|limit reached|rate.?limit|overloaded'; then QUOTA=1; break; fi
+     && cat "../claude-$round.json" <(tail -n 3 "../claude-$round.jsonl") ../claude.err 2>/dev/null | grep -qiE 'usage limit|limit reached|rate.?limit|overloaded|insufficient.*balance|quota'; then QUOTA=1; break; fi
   [ "$l1" = 0 ] && break
   [ $(( DEADLINE - $(date +%s) )) -lt 1200 ] && break
   # Loop không ra kết quả → nâng 1 bậc haiku → sonnet → opus. Ba trường hợp của 1 vòng không tick thêm ô nào:

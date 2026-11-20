@@ -151,3 +151,28 @@ tg_parse_hint() {
        else empty end)
     + {msg_id: .message_id, from: ([.from.first_name, .from.last_name] | map(select(.)) | join(" "))}' "$1"
 }
+
+# Codex không có --disallowedTools như Claude → chặn lệnh không đảo ngược được bằng:
+#  1) PATH guard: gh (pr merge/api/secret/repo), curl, wget, env, printenv bị chặn; gh khác chạy bình thường.
+#  2) git pre-push hook: cấm đẩy main/desktop/* và đẩy đè (force). Script runner vẫn tự push ci/issue-* như cũ.
+# ponytail: guard theo lệnh, agent cố tình lách (--no-verify, gọi /usr/bin/curl) vẫn qua — chốt chặn thật là quyền của VIBECUT_PAT.
+codex_guard() {
+  local real_gh; real_gh=$(command -v gh)
+  mkdir -p /tmp/codex-guard
+  for c in curl wget env printenv; do printf '#!/bin/sh\necho "runner: lệnh %s bị chặn trên CI" >&2; exit 126\n' "$c" > "/tmp/codex-guard/$c"; done
+  cat > /tmp/codex-guard/gh <<EOG
+#!/bin/sh
+case "\$1 \$2" in "pr merge"*|"api "*|"secret "*|"repo "*|"auth "*) echo "runner: gh \$1 \$2 bị chặn trên CI" >&2; exit 126;; esac
+exec "$real_gh" "\$@"
+EOG
+  chmod +x /tmp/codex-guard/*
+  cat > .git/hooks/pre-push <<'EOH'
+#!/bin/sh
+z=0000000000000000000000000000000000000000
+while read lref lsha rref rsha; do
+  case "$rref" in refs/heads/main|refs/heads/desktop/*) echo "runner: cấm đẩy $rref" >&2; exit 1;; esac
+  if [ "$rsha" != "$z" ] && [ "$lsha" != "$z" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then echo "runner: cấm đẩy đè (force) $rref" >&2; exit 1; fi
+done
+EOH
+  chmod +x .git/hooks/pre-push
+}
