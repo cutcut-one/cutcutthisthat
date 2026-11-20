@@ -23,7 +23,7 @@ env:
 
 jobs:
   prep:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs_on }} # ubuntu slots are full with the bake queue for hours; macOS ones are ours
     outputs: { m: '${{ steps.m.outputs.m }}', build: '${{ steps.m.outputs.build }}' }
     steps:
       - uses: actions/checkout@v4
