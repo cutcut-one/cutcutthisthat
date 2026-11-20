@@ -68,13 +68,17 @@ jobs:
           # ponytail: newest stable Xcode on the image; pin a path here if the image gains a beta that breaks the build
           echo "xcodes: $(ls -d /Applications/Xcode_*.app | xargs -n1 basename | tr '\n' ' ')"
           X=$(ls -d /Applications/${{ inputs.xcode }}.app | sort -V | tail -1); sudo xcode-select -s "$X"
-          ( while sleep 20; do echo "$(date +%T) $(memory_pressure | tail -1)"; done > "$RUNNER_TEMP/mem.log" 2>&1 ) &
+          ( while sleep 20; do echo "$(date +%T) $(memory_pressure | tail -1)"; done >> "$RUNNER_TEMP/mem.log" 2>&1 ) &
+          # ponytail: a swift-frontend past 10 GB is a runaway type-check; SIGABRT makes it print its pretty stack trace
+          # (file:line of the declaration) instead of dying silently to jetsam
+          ( while sleep 10; do top -l 1 -o mem -n 8 -stats pid,command,mem | awk '$2 ~ /swift-frontend/ && $3 ~ /G\+?$/ && $3+0 >= 10 {print $1, $3}' |
+              while read p m; do echo "$(date +%T) abort swift-frontend $p $m"; kill -ABRT $p; done; done >> "$RUNNER_TEMP/mem.log" 2>&1 ) &
           t0=$(date +%s); rc=0
           xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -configuration Debug -destination generic/platform=macOS \
             -derivedDataPath "$RUNNER_TEMP/dd" -jobs 3 ARCHS=arm64 ONLY_ACTIVE_ARCH=NO COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO ${{ inputs.xflags }} > "$RUNNER_TEMP/build.log" 2>&1 || rc=$?
           echo "$(basename "$X") rc=$rc build $(( $(date +%s) - t0 ))s"
           if [ $rc != 0 ]; then { grep -iE "error:|BUILD FAILED|killed|signal [0-9]|stack dump|crash" "$RUNNER_TEMP/build.log" | tail -60; tail -30 "$RUNNER_TEMP/build.log"; } > "$RUNNER_TEMP/build-err.txt"
-            { tail -5 "$RUNNER_TEMP/mem.log"; log show --last 30m --predicate 'eventMessage CONTAINS[c] "swift-frontend" OR eventMessage CONTAINS[c] "jetsam"' 2>/dev/null | grep -iE "kill|jetsam|memorystatus|crash" | tail -20; } >> "$RUNNER_TEMP/build-err.txt"
+            { grep abort "$RUNNER_TEMP/mem.log"; grep -A40 "Stack dump" "$RUNNER_TEMP/build.log" | grep -E "While|at /|Stack dump" | head -30; tail -3 "$RUNNER_TEMP/mem.log"; log show --last 30m --predicate 'eventMessage CONTAINS[c] "swift-frontend" OR eventMessage CONTAINS[c] "jetsam"' 2>/dev/null | grep -iE "kill|jetsam|memorystatus|crash" | tail -20; } >> "$RUNNER_TEMP/build-err.txt"
             gzip -kf "$RUNNER_TEMP/build.log"; gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/build-err.txt" "$RUNNER_TEMP/build.log.gz" >/dev/null; exit 1; fi
           cd "$RUNNER_TEMP/dd/Build/Products/Debug" && ditto -c -k --keepParent CutCut.app "$RUNNER_TEMP/app.zip"
           gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/app.zip" >/dev/null
