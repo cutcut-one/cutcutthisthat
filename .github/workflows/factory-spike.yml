@@ -6,6 +6,7 @@ on:
     inputs:
       ref: { default: main }
       runs_on: { default: macos-15 }
+      build_only: { type: boolean, default: false }
 permissions: { contents: read }
 jobs:
   spike:
@@ -21,22 +22,17 @@ jobs:
         working-directory: vibecut
         run: |
           t=$(date +%s)
-          # Vá tạm cho Xcode 26.3 (runner) — Xcode 27 local không báo. Chỉ sửa bản checkout, không commit vibecut.
-          f=ios/CutCut/CutCut/MacSpike/MacMCPTools+Styles.swift
-          sed -i '' 's/existingUserAudio(_ state: MacAppState? = MacAIController.shared.state) -> \[String\] {/existingUserAudio(_ state: MacAppState? = nil) -> [String] {/; s/^        guard let state else { return \[\] }$/        guard let state = state ?? MacAIController.shared.state else { return [] }/' "$f"
-          sed -i '' 's/for (label, t) in \[("intro", intro), ("climax", climax), ("outro", outro)\] {/for (label, t) in [("intro", Double?.some(intro)), ("climax", climax), ("outro", Double?.some(outro))] {/' ios/CutCut/CutCut/MacSpike/MacMusicPreview.swift
-          echo "FACTORY patch2 $(grep -c 'Double?.some(intro)' ios/CutCut/CutCut/MacSpike/MacMusicPreview.swift)"
-          echo "FACTORY patch $(grep -c 'state ?? MacAIController.shared.state' "$f")"
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; echo "FACTORY xcode $(xcodebuild -version | head -1 | tr ' ' _) all=$(ls -d /Applications/Xcode*.app | xargs -n1 basename | tr '\n' ,)"
           if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
-               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO SWIFT_VERSION=5 SWIFT_STRICT_CONCURRENCY=minimal > /tmp/build.log 2>&1; then
+               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO -IDEBuildingContinueBuildingAfterErrors=YES > /tmp/build.log 2>&1; then
             echo "FACTORY build ok $(( $(date +%s) - t ))"
           else
             echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"
             # chỉ in thông điệp lỗi (bỏ đường dẫn, ≤120 ký tự) — không in code
-            grep -h 'error:' /tmp/build.log | sed -E 's#^.*/([^/:]+:[0-9]+):[0-9]+: error: ?#\1 #' | cut -c1-140 | sort -u | head -5 | sed 's/^/FACTORY build_err /'; exit 1
+            grep -h 'error:' /tmp/build.log | sed -E 's#^.*/([^/:]+:[0-9]+):[0-9]+: error: ?#\1 #' | cut -c1-140 | sort -u | head -40 | sed 's/^/FACTORY build_err /'; exit 1
           fi
       - name: app
+        if: ${{ !inputs.build_only }}
         run: |
           app=$(find /tmp/dd-mac/Build/Products -maxdepth 2 -name '*.app' | head -1)
           codesign --force --deep -s - "$app" >/dev/null 2>&1 && echo "FACTORY adhoc_sign ok" || echo "FACTORY adhoc_sign fail"
@@ -45,6 +41,7 @@ jobs:
           bash runner/scripts/factory/grant-tcc.sh "$bid"
           command -v ffmpeg >/dev/null || brew install -q ffmpeg >/dev/null 2>&1; echo "FACTORY ffmpeg $(command -v ffmpeg >/dev/null && echo ok || echo fail)"
       - name: launch
+        if: ${{ !inputs.build_only }}
         run: |
           t=$(date +%s)
           open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=2400 --stdout /tmp/app.log --stderr /tmp/app.err "$APP"
@@ -56,13 +53,15 @@ jobs:
           { echo "MCP_PORT=$port"; echo "MCP_KEY=$key"; echo "MCP_FOLDER=$folder"; } >> "$GITHUB_ENV"
           echo "FACTORY ready ok $(( $(date +%s) - t )) port=$port"
       - name: samples
+        if: ${{ !inputs.build_only }}
         run: |
           t=$(date +%s); bash runner/scripts/factory/make-samples.sh "$MCP_FOLDER/in" | sed 's/^/FACTORY samples /'
           echo "FACTORY samples ok $(( $(date +%s) - t )) n=$(ls "$MCP_FOLDER/in" | wc -l | tr -d ' ')"
       - name: mcp
+        if: ${{ !inputs.build_only }}
         run: python3 runner/scripts/factory/spike.py "$MCP_PORT" "$MCP_KEY" "$MCP_FOLDER"
       - name: after
-        if: always()
+        if: ${{ always() && !inputs.build_only }}
         run: |
           echo "FACTORY app_running $(pgrep -f "${APP:-/nonexistent.app}" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"
           echo "FACTORY app_err_lines $(wc -l < /tmp/app.err 2>/dev/null || echo 0) speech_denied=$(grep -ci 'speech.*\(denied\|not authorized\)' /tmp/app.err /tmp/app.log 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')"

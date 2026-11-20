@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """F02 spike: drive CutCut MCP headless. Log CÂM: chỉ in 'FACTORY <bước> ok|fail <giây> [mã]' + tên tool."""
-import json, os, re, sys, time, urllib.request
+import base64, json, os, re, subprocess, sys, tempfile, time, urllib.request, zlib
 
 PORT, KEY, FOLDER = sys.argv[1], sys.argv[2], sys.argv[3]
 URL = f"http://127.0.0.1:{PORT}/mcp"
@@ -50,7 +50,21 @@ def step(name, fn):
 
 step("initialize", lambda: (rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "factory-spike", "version": "0"}}),
                             rpc("notifications/initialized", notify=True)))
-tools = step("tools_list", lambda: [t["name"] for t in rpc("tools/list")["result"]["tools"]])
+raw = step("tools_list", lambda: rpc("tools/list")["result"]["tools"])
+tools = [t["name"] for t in raw]
+
+def seal(obj):
+    # Repo PUBLIC: tools/list chỉ in ra dạng mã hoá (AES ngẫu nhiên + RSA khoá công khai f02.pub); khoá riêng ở máy owner.
+    d = tempfile.mkdtemp(); k = os.urandom(32).hex()
+    open(f"{d}/p", "wb").write(zlib.compress(json.dumps(obj).encode(), 9))
+    subprocess.run(["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-pass", f"pass:{k}", "-in", f"{d}/p", "-out", f"{d}/c"], check=True)
+    ek = subprocess.run(["openssl", "pkeyutl", "-encrypt", "-pubin", "-inkey", os.path.join(os.path.dirname(__file__), "f02.pub")],
+                        input=k.encode(), capture_output=True, check=True).stdout
+    b = base64.b64encode(open(f"{d}/c", "rb").read()).decode()
+    print("FACTORY sealed_key " + base64.b64encode(ek).decode(), flush=True)
+    for i in range(0, len(b), 3000): print("FACTORY sealed " + b[i:i + 3000], flush=True)
+try: seal(raw)
+except Exception as e: print(f"FACTORY seal fail {type(e).__name__}", flush=True)
 want = ["plan_edit", "apply_edit_plan", "direct_video", "generate_captions", "get_frames", "tts", "add_text", "export", "import_file", "new_project"]
 print("FACTORY tools " + " ".join(f"{w}={'y' if w in tools else 'n'}" for w in want) + f" total={len(tools)}", flush=True)
 step("new_project", lambda: call("new_project", aspectRatio="9:16", name="factory-spike"))
@@ -61,7 +75,7 @@ step("direct_video", lambda: wait(call("direct_video", style="tutorial", aspect=
 cap = step("generate_captions", lambda: wait(call("generate_captions", source="video", language="vi-VN")))
 print(f"FACTORY captions count={cap.get('count') if isinstance(cap, dict) else '?'}", flush=True)
 out = FOLDER + "/out.mp4"
-step("export", lambda: wait(call("export", resolution="1080p", destination=out)))
+step("export", lambda: wait(call("export", resolution="1080P", destination=out)))
 size = os.path.getsize(out) if os.path.exists(out) else 0
 print(f"FACTORY export_size_mb {size/1e6:.1f} {'ok' if size > 1e6 else 'fail'}", flush=True)
 sys.exit(0 if size > 1e6 else 1)
