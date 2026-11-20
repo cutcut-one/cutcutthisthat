@@ -14,7 +14,8 @@ on:
       par: { description: 'max parallel macOS jobs (<= 5 per org)', default: '5' }
       hours: { description: 'stop starting renders after N hours', default: '5' }
       runs_on: { description: 'macOS image for prep + render (arm: Metal GPU)', default: 'macos-15' }
-      build_on: { description: 'macOS image for the app build (arm 7 GB ran out compiling; intel 14 GB cross-builds arm64)', default: 'macos-15-intel' }
+      build_on: { description: 'macOS image for the app build', default: 'macos-15' }
+      xflags: { description: 'extra xcodebuild settings for the app build', default: '' }
 
 env:
   GH_TOKEN: ${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}
@@ -67,10 +68,10 @@ jobs:
           X=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1); sudo xcode-select -s "$X"
           t0=$(date +%s); rc=0
           xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -configuration Debug -destination generic/platform=macOS \
-            -derivedDataPath "$RUNNER_TEMP/dd" -jobs 3 ARCHS=arm64 ONLY_ACTIVE_ARCH=NO COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/build.log" 2>&1 || rc=$?
+            -derivedDataPath "$RUNNER_TEMP/dd" -jobs 3 ARCHS=arm64 ONLY_ACTIVE_ARCH=NO COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO ${{ inputs.xflags }} > "$RUNNER_TEMP/build.log" 2>&1 || rc=$?
           echo "$(basename "$X") rc=$rc build $(( $(date +%s) - t0 ))s"
           if [ $rc != 0 ]; then { grep -iE "error:|BUILD FAILED|killed|signal [0-9]|stack dump|crash" "$RUNNER_TEMP/build.log" | tail -60; tail -30 "$RUNNER_TEMP/build.log"; } > "$RUNNER_TEMP/build-err.txt"
-            gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/build-err.txt" >/dev/null; exit 1; fi
+            gzip -kf "$RUNNER_TEMP/build.log"; gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/build-err.txt" "$RUNNER_TEMP/build.log.gz" >/dev/null; exit 1; fi
           cd "$RUNNER_TEMP/dd/Build/Products/Debug" && ditto -c -k --keepParent CutCut.app "$RUNNER_TEMP/app.zip"
           gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/app.zip" >/dev/null
           echo "app $(du -h "$RUNNER_TEMP/app.zip" | cut -f1)"
