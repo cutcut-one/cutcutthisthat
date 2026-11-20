@@ -5,8 +5,10 @@ KHÔNG BAO GIỜ chạy lệnh nền (run_in_background) hay "đợi được b�
 Build/test lâu (build iOS sạch lần đầu 15–30 phút) thì chạy THẲNG, chờ tới khi xong (trần lệnh đã nới 60 phút).
 Kết thúc lượt trả lời = kết thúc phiên: chỉ dừng khi hết task, hết giờ, hoặc báo CẦN-MODEL-MẠNH.
 
-TUYỆT ĐỐI KHÔNG tạo repo mới, không tạo/sửa repo trên tài khoản cá nhân `nguyenphp`. Repo phụ trợ (CI, batch…)
-chỉ được nằm trong org, và chỉ dùng repo ĐÃ CÓ — cần repo mới thì bỏ qua task đó, ghi lý do để owner tự tạo.
+Repo làm việc là `$REPO` (vd `nguyenphp/vibecut`) — đây là repo CHÍNH, bạn ĐƯỢC sửa code, commit và push nhánh
+`$BRANCH` bình thường dù nó nằm trên tài khoản cá nhân. Điều bị cấm chỉ là: TẠO repo mới (ở bất cứ đâu), hoặc
+tạo/sửa repo PHỤ TRỢ (CI, batch…) trên tài khoản cá nhân `nguyenphp`. Task nào thật sự cần repo mới thì bỏ qua task đó,
+ghi lý do để owner tự tạo — task chỉ sửa code trong `$REPO` thì KHÔNG được bỏ qua với lý do "repo cá nhân".
 
 Biến môi trường: ISSUE, REPO, PLATFORM, TEST_CMD, DEADLINE (epoch giây), BRANCH. Bạn đang ở nhánh $BRANCH.
 
