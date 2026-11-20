@@ -26,7 +26,9 @@ jobs:
                -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO > /tmp/build.log 2>&1; then
             echo "FACTORY build ok $(( $(date +%s) - t ))"
           else
-            echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"; exit 1
+            echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"
+            # chỉ in thông điệp lỗi (bỏ đường dẫn, ≤120 ký tự) — không in code
+            grep -h 'error:' /tmp/build.log | sed -E 's#^.*error: ?##' | cut -c1-120 | sort -u | head -5 | sed 's/^/FACTORY build_err /'; exit 1
           fi
       - name: app
         run: |
@@ -56,5 +58,5 @@ jobs:
       - name: after
         if: always()
         run: |
-          echo "FACTORY app_running $(pgrep -f "${APP:-none}" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"
+          echo "FACTORY app_running $(pgrep -f "${APP:-/nonexistent.app}" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"
           echo "FACTORY app_err_lines $(wc -l < /tmp/app.err 2>/dev/null || echo 0) speech_denied=$(grep -ci 'speech.*\(denied\|not authorized\)' /tmp/app.err /tmp/app.log 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')"
