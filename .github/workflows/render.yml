@@ -1,0 +1,113 @@
+name: render
+run-name: render ${{ inputs.tag }}
+# tplrender: preview.mp4 + thumb.jpg of vibe templates via the CutCut Mac harness on macOS runners (scripts/kho/runner_tplrender.sh).
+# Repo is PUBLIC: steps print counts only; app, plan, logs and results go to the PRIVATE data release `tag`, never to artifacts.
+# plan.json / app.zip already in the release → reused (2nd org, re-runs): launch org 2 only after org 1's prep + build finished.
+on:
+  workflow_dispatch:
+    inputs:
+      tag: { description: 'output release tag', required: true }
+      seed: { description: 'template/lm bake tags, oldest first (later wins)', required: true }
+      shards: { description: 'shards', default: '10' }
+      list: { description: 'explicit shard specs i/N (space separated), overrides shards', default: '' }
+      only: { description: 'trial: comma list of template ids', default: '' }
+      par: { description: 'max parallel macOS jobs (<= 5 per org)', default: '5' }
+      hours: { description: 'stop starting renders after N hours', default: '5' }
+      runs_on: { description: 'macOS image', default: 'macos-15' }
+
+env:
+  GH_TOKEN: ${{ secrets.BATCH_TOKEN || secrets.VIBECUT_PAT }}
+  CODE: ${{ vars.BATCH_CODE_REPO }}
+  REF: ${{ vars.BATCH_CODE_REF }}
+  DATA: ${{ vars.BATCH_DATA_REPO }}
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs: { m: '${{ steps.m.outputs.m }}', build: '${{ steps.m.outputs.build }}' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE }}
+          ref: ${{ env.REF }}
+          token: ${{ env.GH_TOKEN }}
+          path: w/code
+          sparse-checkout: |
+            scripts/kho
+            scripts/assets
+            shared/kho
+      - id: m
+        env: { ONLY: '${{ inputs.only }}' }
+        run: |
+          T="${{ inputs.tag }}"; N="${{ inputs.shards }}"
+          gh release view "$T" -R "$DATA" >/dev/null 2>&1 || gh release create "$T" -R "$DATA" --notes "" >/dev/null
+          A=$(gh release view "$T" -R "$DATA" --json assets -q '.assets[].name')
+          if grep -qx plan.json <<<"$A"; then echo "plan reused"; else
+            python3 w/code/scripts/kho/tplrender_plan.py plan plan.json "$N" ${{ inputs.seed }} 2>plan.err || { echo "plan failed"; gh release upload "$T" -R "$DATA" --clobber plan.err >/dev/null; exit 1; }
+            gh release upload "$T" -R "$DATA" --clobber plan.json >/dev/null
+          fi
+          grep -qx app.zip <<<"$A" && echo "build=false" >> "$GITHUB_OUTPUT" || echo "build=true" >> "$GITHUB_OUTPUT"
+          L="${{ inputs.list }}"; [ -n "$L" ] || L=$(seq -s ' ' -f "%g/$N" 0 $(( N - 1 )))
+          echo "m=$(jq -cn --arg l "$L" '$l|split(" ")|map(select(length>0))')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prep
+    if: needs.prep.outputs.build == 'true'
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: '${{ env.CODE }}', ref: '${{ env.REF }}', token: '${{ env.GH_TOKEN }}', path: w/code }
+      - name: build
+        working-directory: w/code
+        run: |
+          # ponytail: newest stable Xcode on the image; pin a path here if the image gains a beta that breaks the build
+          X=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1); sudo xcode-select -s "$X"
+          t0=$(date +%s)
+          xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -configuration Debug -destination platform=macOS \
+            -derivedDataPath "$RUNNER_TEMP/dd" COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/build.log" 2>&1; rc=$?
+          echo "$(basename "$X") rc=$rc build $(( $(date +%s) - t0 ))s"
+          if [ $rc != 0 ]; then grep -E "error:|BUILD FAILED" "$RUNNER_TEMP/build.log" | tail -40 > "$RUNNER_TEMP/build-err.txt"
+            gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/build-err.txt" >/dev/null; exit 1; fi
+          cd "$RUNNER_TEMP/dd/Build/Products/Debug" && ditto -c -k --keepParent CutCut.app "$RUNNER_TEMP/app.zip"
+          gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$RUNNER_TEMP/app.zip" >/dev/null
+          echo "app $(du -h "$RUNNER_TEMP/app.zip" | cut -f1)"
+
+  run:
+    needs: [prep, build]
+    if: always() && needs.prep.result == 'success' && needs.build.result != 'failure' && needs.build.result != 'cancelled'
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.par) }} # free plan: 5 macOS jobs per org
+      matrix: { shard: '${{ fromJSON(needs.prep.outputs.m) }}' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE }}
+          ref: ${{ env.REF }}
+          token: ${{ env.GH_TOKEN }}
+          path: w/code
+          sparse-checkout: |
+            scripts/kho
+            scripts/assets
+            shared/kho
+      - name: input
+        run: |
+          mkdir -p o/app
+          gh release download "${{ inputs.tag }}" -R "$DATA" -p plan.json -p app.zip -D o
+          gh release download input -R "$DATA" -p media.tgz -D o
+          ditto -x -k o/app.zip o/app && rm o/app.zip && codesign --force --deep --sign - o/app/CutCut.app 2>/dev/null; echo "inputs ok"
+      - name: work
+        run: |
+          until=$(( $(date +%s) + $(python3 -c "print(int(${{ inputs.hours }}*3600))") ))
+          bash w/code/scripts/kho/runner_tplrender.sh "${{ matrix.shard }}" "$PWD/o" "$until"
+      - name: upload
+        if: always()
+        run: |
+          [ -f o/result.tgz ] || exit 0
+          N="s$(echo "${{ matrix.shard }}" | tr / _)-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+          cp o/result.tgz "$N"
+          gh release upload "${{ inputs.tag }}" -R "$DATA" --clobber "$N" >/dev/null
+          echo "uploaded $(du -h o/result.tgz | cut -f1)"
