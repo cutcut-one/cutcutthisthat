@@ -23,7 +23,7 @@ jobs:
           t=$(date +%s)
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; echo "FACTORY xcode $(xcodebuild -version | head -1 | tr ' ' _) all=$(ls -d /Applications/Xcode*.app | xargs -n1 basename | tr '\n' ,)"
           if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
-               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO > /tmp/build.log 2>&1; then
+               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO SWIFT_VERSION=5 SWIFT_STRICT_CONCURRENCY=minimal > /tmp/build.log 2>&1; then
             echo "FACTORY build ok $(( $(date +%s) - t ))"
           else
             echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"
