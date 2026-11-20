@@ -21,6 +21,10 @@ jobs:
         working-directory: vibecut
         run: |
           t=$(date +%s)
+          # Vá tạm cho Xcode 26.3 (runner) — Xcode 27 local không báo. Chỉ sửa bản checkout, không commit vibecut.
+          f=ios/CutCut/CutCut/MacSpike/MacMCPTools+Styles.swift
+          sed -i '' 's/existingUserAudio(_ state: MacAppState? = MacAIController.shared.state) -> \[String\] {/existingUserAudio(_ state: MacAppState? = nil) -> [String] {/; s/^        guard let state else { return \[\] }$/        guard let state = state ?? MacAIController.shared.state else { return [] }/' "$f"
+          echo "FACTORY patch $(grep -c 'state ?? MacAIController.shared.state' "$f")"
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; echo "FACTORY xcode $(xcodebuild -version | head -1 | tr ' ' _) all=$(ls -d /Applications/Xcode*.app | xargs -n1 basename | tr '\n' ,)"
           if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
                -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO SWIFT_VERSION=5 SWIFT_STRICT_CONCURRENCY=minimal > /tmp/build.log 2>&1; then
