@@ -68,4 +68,4 @@ jobs:
           # crash: chỉ loại lỗi + 8 khung đầu luồng chết (tên hàm), không in dữ liệu
           f=$(ls -t ~/Library/Logs/DiagnosticReports/*[Cc]ut[Cc]ut* 2>/dev/null | head -1)
           [ -n "$f" ] && python3 runner/scripts/factory/crash-brief.py "$f" | sed 's/^/FACTORY crash /' || true
-          grep -iE 'fatal|error|assert|precondition' /tmp/app.err /tmp/app.log 2>/dev/null | sed -E 's#/[^ ]*/##g' | cut -c1-160 | sort -u | head -8 | sed 's/^/FACTORY app_err /' || true
+          grep -iE 'fatal|error|assert|precondition|terminating|exception|reason' /tmp/app.err /tmp/app.log 2>/dev/null | sed -E 's#/[^ ]*/##g' | cut -c1-160 | sort -u | head -8 | sed 's/^/FACTORY app_err /' || true
