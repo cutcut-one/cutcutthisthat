@@ -4,7 +4,7 @@
 # Log repo này PUBLIC: chỉ in số issue, không in tiêu đề/nội dung.
 # GH_TOKEN = token repo runner (mở job); PRIV_TOKEN = PAT repo private.
 set -euo pipefail
-PLATFORMS='["ios","mac","android","windows","linux"]'
+PLATFORMS='["ios","mac","android","windows","linux","factory-linux"]'
 priv() { GH_TOKEN="$PRIV_TOKEN" gh "$@" -R "$PRIVATE_REPO"; }
 lim() { jq -r --arg k "$1" '._limits[$k] // ._limits.total' platforms.json; }
 
@@ -56,7 +56,7 @@ while read -r row; do
   os=$(jq -r --arg p "$p" '.[$p].runs_on' platforms.json)
   if [ "$(uget "$os")" -ge "$(lim "$os")" ]; then echo "issue #$n: $os đủ $(lim "$os") job, chờ"; continue; fi
   priv issue edit "$n" --add-label ci-running >/dev/null
-  gh workflow run run-cluster.yml -f issue="$n" -f platform="$p" -f runs_on="$os"
+  gh workflow run run-cluster.yml -f issue="$n" -f platform="$p" -f runs_on="$os" -f repo="$PRIVATE_REPO"
   uinc "$os"; total=$((total + 1))
   echo "issue #$n → $p ($os)"
 done < <(jq -c --argjson P "$PLATFORMS" '.[] | select([.labels[].name] | index("ci-running") | not)
@@ -83,6 +83,9 @@ for n in $(jq -r --arg q "$quiet" '.[] | select(([.labels[].name] | index("ci-ru
     echo "issue #$n: huỷ run kẹt, lần $k"
   fi
 done
+
+# Repo phụ (clip-factory…): chỉ mở job + watchdog; nhắc hàng chờ / merge nhánh gốc là việc của vibecut.
+[ -z "${SECONDARY:-}" ] || exit 0
 
 # Nhắc hàng chờ sắp cạn. Trạng thái nằm trong issue ghim nhãn runner-state ở repo private.
 waiting=$(priv issue list --label ci-run --state open -L 200 --json labels -q '[.[] | select([.labels[].name] | index("ci-running") | not)] | length')

@@ -24,5 +24,9 @@
   "linux": {
     "runs_on": "ubuntu-latest",
     "test": "if [ -f desktop/ci/test.sh ]; then bash desktop/ci/test.sh; else echo 'chưa có desktop/ci/test.sh (gói D00 tạo)'; fi"
+  },
+  "factory-linux": {
+    "runs_on": "ubuntu-latest",
+    "test": "bash ci/test.sh"
   }
 }

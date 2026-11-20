@@ -6,7 +6,9 @@ on:
       issue: { required: true }
       platform: { required: true }
       runs_on: { required: true }
-concurrency: { group: 'issue-${{ inputs.issue }}' }
+      # Repo đích (mặc định vibecut). Thư mục checkout vẫn tên `vibecut` cho khỏi sửa mọi working-directory.
+      repo: { required: false, default: 'nguyenphp/vibecut' }
+concurrency: { group: "issue-${{ inputs.issue }}${{ inputs.repo != 'nguyenphp/vibecut' && format('-{0}', inputs.repo) || '' }}" }
 permissions: { contents: read, actions: write }
 jobs:
   run:
@@ -15,7 +17,7 @@ jobs:
     defaults: { run: { shell: bash } }
     env:
       GH_TOKEN: ${{ secrets.VIBECUT_PAT }}
-      REPO: nguyenphp/vibecut
+      REPO: ${{ inputs.repo || 'nguyenphp/vibecut' }}
       ISSUE: ${{ inputs.issue }}
       PLATFORM: ${{ inputs.platform }}
       # Telegram: 1 bot riêng mỗi tài khoản Claude (TG_BOT_TOKEN_1..3) hoặc 1 bot chung; thiếu thì không báo.
@@ -34,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { path: runner }
       - uses: actions/checkout@v4
-        with: { repository: nguyenphp/vibecut, token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
+        with: { repository: "${{ inputs.repo || 'nguyenphp/vibecut' }}", token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
 
       - name: git
         working-directory: vibecut

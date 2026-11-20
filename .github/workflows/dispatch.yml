@@ -31,6 +31,15 @@ jobs:
           TOK_2: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_2 }}
           TOK_3: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}
         run: bash scripts/dispatch.sh
+      # Repo phụ: nhà máy clip (issue nhãn factory-linux). Dùng chung trần job + PAT.
+      - name: dispatch clip-factory
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRIV_TOKEN: ${{ secrets.VIBECUT_PAT }}
+          PRIVATE_REPO: nguyenphp/clip-factory
+          SECONDARY: "1"
+        run: 'bash scripts/dispatch.sh || echo "clip-factory lỗi - PAT chưa có quyền repo?"'
       # Trạng thái công khai cho trang văn phòng (chỉ số/mã/trạng thái, không tiêu đề) → nhánh `status`.
       - name: status
         if: always()

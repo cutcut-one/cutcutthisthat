@@ -13,7 +13,7 @@ def parse(text):
         if line.startswith('## ') or line.startswith('---'):
             cur = None; continue
         if cur is None: continue
-        mm = re.match(r'^meta: *(\w+) *\| *(\w+) *\| *chờ: *(.*)$', line)
+        mm = re.match(r'^meta: *([\w-]+) *\| *(\w+) *\| *chờ: *(.*)$', line)
         if mm:
             cur['platform'], cur['model'] = mm[1], mm[2]
             cur['deps'] = [d.strip() for d in mm[3].split(',') if d.strip() not in ('', '—', '-')]
@@ -23,7 +23,7 @@ def parse(text):
         assert 'platform' in p, f"{p['id']} thiếu meta"
     return pk
 
-def body_of(p, base, doc, nums, read, goal):
+def body_of(p, base, doc, nums, read, goal, prefix='desktop'):
     tasks, done, cur = [], '', None
     for l in p['lines']:
         if l.startswith('Xong khi:'): done = l[len('Xong khi:'):].strip(); cur = None
@@ -38,7 +38,7 @@ def body_of(p, base, doc, nums, read, goal):
         '## Xong khi', f'- {done or "test xanh"}', '- `$TEST_CMD` xanh (build + toàn bộ test)', '',
         '## Ghi chú',
         f'- ĐỌC TRƯỚC trên nhánh `{base}`: {read}, mục {p["id"]} của `{doc}`.',
-        '- Code Swift gốc là chân lý: lệch tài liệu → theo code, sửa tài liệu trong cùng PR.', '',
+        *(['- Code Swift gốc là chân lý: lệch tài liệu → theo code, sửa tài liệu trong cùng PR.'] if prefix == 'desktop' else ['- Hợp đồng `docs/contract/` là chân lý: thấy sai → ghi vào PR, không tự sửa hợp đồng.']), '',
         f'Nhánh gốc: {base}', *( [f'Chờ: {wait}'] if wait else [] ), '',
         f'<!-- plan:{base}:{p["id"]} -->'])
 
@@ -56,7 +56,12 @@ def main():
     ap.add_argument('--read', default='`docs/desktop/spec.md`, `docs/desktop/engine-contract.md`, `docs/desktop/ui-inventory.md`')
     ap.add_argument('--goal', default='cho CutCut Desktop (Windows + Linux, lõi C++, giao diện y app Mac).')
     ap.add_argument('--prefix', default='desktop')
+    ap.add_argument('--label-extra', action='append', default=[], help='nhãn thêm cho mọi issue, vd repo:clip-factory')
+    ap.add_argument('--only', default='', help='chỉ tạo các gói này, vd S1,S2 (gói chờ ngoài danh sách coi như đã xong)')
     a = ap.parse_args(); pk = parse(open(a.plan, encoding='utf-8').read())
+    if a.only:
+        keep = set(a.only.split(',')); pk = [p for p in pk if p['id'] in keep]
+        for p in pk: p['deps'] = [d for d in p['deps'] if d in keep]
     ids = {p['id'] for p in pk}
     for p in pk:
         bad = [d for d in p['deps'] if d not in ids]; assert not bad, f'{p["id"]} chờ gói lạ {bad}'
@@ -74,8 +79,8 @@ def main():
             if m: nums[m[1]] = it['number']
     bots, k = ['bot:ironman', 'bot:spiderman', 'bot:queenie'], 0
     for p in order:
-        b = body_of(p, a.base, a.doc, nums, a.read, a.goal)
-        labels = [p['platform'], f'model:{p["model"]}', bots[k % 3], 'ci-run']; k += 1
+        b = body_of(p, a.base, a.doc, nums, a.read, a.goal, a.prefix)
+        labels = [p['platform'], f'model:{p["model"]}', bots[k % 3], 'ci-run', *a.label_extra]; k += 1
         title = f'[{a.prefix}/{p["platform"]}] {p["id"]} {p["title"]}'
         if not a.create:
             print(f'{p["id"]:6} {",".join(labels):45} chờ {p["deps"] or "-"}'); nums[p['id']] = f'?{p["id"]}'; continue
