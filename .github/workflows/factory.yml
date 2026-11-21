@@ -75,9 +75,22 @@ jobs:
           npm i -g --silent @anthropic-ai/claude-code >/dev/null 2>&1
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
           export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID-${{ matrix.slot }}
-          start=$(date +%s); echo "FACTORY worker start"
-          # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
-          (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $((start+20400))) 2>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160 || true
+          start=$(date +%s); until=$((start+20400)); echo "FACTORY worker start"
+          relaunch() {  # CutCut treo/chết (worker thoát mã 3): tắt hẳn, mở lại, đọc cổng/khoá mới
+            pkill -f "$APP" || true; sleep 5; : > /tmp/app.log
+            open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=$(( until - $(date +%s) + 600 )) --stdout /tmp/app.log --stderr /tmp/app.err "$APP" --args -asr.engine apple
+            for i in $(seq 1 90); do grep -q 'HARNESS agent READY' /tmp/app.log 2>/dev/null && break; sleep 2; done
+            line=$(grep -m1 'HARNESS agent READY' /tmp/app.log || true); [ -n "$line" ] || return 1
+            export CUTCUT_MCP_PORT=$(sed -E 's/.*port=([0-9]+).*/\1/' <<<"$line") CUTCUT_MCP_KEY=$(sed -E 's/.*key=([^ ]+).*/\1/' <<<"$line") CUTCUT_AGENT_FOLDER=$(sed -E 's/.*folder=(.*)$/\1/' <<<"$line")
+            echo "::add-mask::$CUTCUT_MCP_KEY"
+          }
+          while [ "$(date +%s)" -lt $(( until - 1200 )) ]; do
+            # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
+            (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $until) 2>>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160
+            rc=${PIPESTATUS[0]}
+            [ "$rc" = 3 ] || break
+            echo "FACTORY app_restart"; relaunch || { echo "FACTORY app_restart_fail"; break; }
+          done
           echo "FACTORY worker done err_lines=$(wc -l < /tmp/worker.err)"
   chain:
     # nối lượt sau khi cả 3 máy xong (1 lần cho cả lượt), trừ khi đã có lượt factory khác đang chạy
