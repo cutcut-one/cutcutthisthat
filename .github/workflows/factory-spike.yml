@@ -45,7 +45,7 @@ jobs:
         if: ${{ !inputs.build_only }}
         run: |
           t=$(date +%s)
-          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=2400 --stdout /tmp/app.log --stderr /tmp/app.err "$APP"
+          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=2400 --stdout /tmp/app.log --stderr /tmp/app.err "$APP" --args -asr.engine apple
           for i in $(seq 1 90); do grep -q 'HARNESS agent READY' /tmp/app.log 2>/dev/null && break; sleep 2; done
           line=$(grep -m1 'HARNESS agent READY' /tmp/app.log || true)
           [ -n "$line" ] || { echo "FACTORY ready fail $(( $(date +%s) - t )) running=$(pgrep -f "$APP" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"; exit 1; }

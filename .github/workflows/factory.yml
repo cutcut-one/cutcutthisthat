@@ -44,11 +44,12 @@ jobs:
           bid=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")
           echo "APP=$app" >> "$GITHUB_ENV"; echo "FACTORY bundle $bid"
           bash runner/scripts/factory/grant-tcc.sh "$bid"
+          defaults write "$bid" asr.engine apple  # phụ đề offline, không cần đăng nhập cloud
           command -v ffmpeg >/dev/null || brew install -q ffmpeg >/dev/null 2>&1; echo "FACTORY ffmpeg $(command -v ffmpeg >/dev/null && echo ok || echo fail)"
       - name: launch
         run: |
           t=$(date +%s)
-          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=21000 --stdout /tmp/app.log --stderr /tmp/app.err "$APP"
+          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=21000 --stdout /tmp/app.log --stderr /tmp/app.err "$APP" --args -asr.engine apple
           for i in $(seq 1 90); do grep -q 'HARNESS agent READY' /tmp/app.log 2>/dev/null && break; sleep 2; done
           line=$(grep -m1 'HARNESS agent READY' /tmp/app.log || true)
           [ -n "$line" ] || { echo "FACTORY ready fail $(( $(date +%s) - t )) running=$(pgrep -f "$APP" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"; exit 1; }
