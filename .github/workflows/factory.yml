@@ -71,8 +71,9 @@ jobs:
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
           export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID
           start=$(date +%s); echo "FACTORY worker start"
-          (cd cf/worker && /tmp/venv/bin/python -m factory --until $((start+20400))) > /tmp/worker.log 2>&1 || echo "FACTORY worker exit $?"
-          grep '^FACTORY ' /tmp/worker.log | cut -c1-160 | tail -200 || true
+          # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
+          (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $((start+20400))) 2>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160 || true
+          echo "FACTORY worker done err_lines=$(wc -l < /tmp/worker.err)"
       - name: chain
         if: always() && env.SKIP != '1'
         env: { GH_TOKEN: '${{ github.token }}' }
