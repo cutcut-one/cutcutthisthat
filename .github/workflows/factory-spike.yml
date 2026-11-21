@@ -39,6 +39,7 @@ jobs:
           bid=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")
           echo "APP=$app" >> "$GITHUB_ENV"; echo "FACTORY bundle $bid"
           bash runner/scripts/factory/grant-tcc.sh "$bid"
+          defaults write "$bid" asr.engine apple  # phụ đề offline, không cần đăng nhập cloud
           command -v ffmpeg >/dev/null || brew install -q ffmpeg >/dev/null 2>&1; echo "FACTORY ffmpeg $(command -v ffmpeg >/dev/null && echo ok || echo fail)"
       - name: launch
         if: ${{ !inputs.build_only }}
