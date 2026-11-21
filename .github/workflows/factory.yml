@@ -8,6 +8,8 @@ concurrency: { group: factory, cancel-in-progress: false }
 permissions: { contents: read, actions: write }
 jobs:
   factory:
+    # nhiều máy dựng song song: mỗi slot 1 máy macOS, cùng nhận việc từ server (claim có khoá, không trùng việc)
+    strategy: { fail-fast: false, matrix: { slot: [1, 2, 3] } }
     runs-on: macos-15
     timeout-minutes: 360
     defaults: { run: { shell: bash } }
@@ -72,12 +74,18 @@ jobs:
         run: |
           npm i -g --silent @anthropic-ai/claude-code >/dev/null 2>&1
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
-          export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID
+          export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID-${{ matrix.slot }}
           start=$(date +%s); echo "FACTORY worker start"
           # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
           (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $((start+20400))) 2>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160 || true
           echo "FACTORY worker done err_lines=$(wc -l < /tmp/worker.err)"
-      - name: chain
-        if: always() && env.SKIP != '1'
-        env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh workflow run factory.yml -R "$GITHUB_REPOSITORY" && echo "FACTORY chain ok"
+  chain:
+    # nối lượt sau khi cả 3 máy xong (1 lần cho cả lượt), trừ khi đã có lượt factory khác đang chạy
+    needs: factory
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
+          [ "$n" = 0 ] && gh workflow run factory.yml -R "$GITHUB_REPOSITORY" && echo "FACTORY chain ok" || echo "FACTORY chain skip"
