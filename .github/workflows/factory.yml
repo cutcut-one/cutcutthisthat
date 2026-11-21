@@ -1,0 +1,78 @@
+name: factory
+# R1: nhà máy chạy nối 24/7 — CutCut + worker clip-factory nhận việc tuần tự.
+# Repo PUBLIC: log chỉ in dòng "FACTORY …" (bước, giây, tên tool, mã lỗi ngắn). Không upload artifact.
+on:
+  workflow_dispatch:
+  schedule: [{ cron: '*/15 * * * *' }]
+concurrency: { group: factory, cancel-in-progress: false }
+permissions: { contents: read, actions: write }
+jobs:
+  factory:
+    runs-on: macos-15
+    timeout-minutes: 360
+    defaults: { run: { shell: bash } }
+    steps:
+      - name: guard
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
+          [ "$n" = 0 ] || { echo "FACTORY skip other_running"; echo SKIP=1 >> "$GITHUB_ENV"; }
+      - uses: actions/checkout@v4
+        if: env.SKIP != '1'
+        with: { path: runner }
+      - uses: actions/checkout@v4
+        if: env.SKIP != '1'
+        with: { repository: nguyenphp/vibecut, ref: 'main', token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
+      - name: build
+        if: env.SKIP != '1'
+        working-directory: vibecut
+        run: |
+          t=$(date +%s)
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"; echo "FACTORY xcode $(xcodebuild -version | head -1 | tr ' ' _) all=$(ls -d /Applications/Xcode*.app | xargs -n1 basename | tr '\n' ,)"
+          if xcodebuild build -project ios/CutCut/CutCut.xcodeproj -scheme CutCutMacSpike -destination platform=macOS \
+               -derivedDataPath /tmp/dd-mac -jobs 3 COMPILER_INDEX_STORE_ENABLE=NO -quiet CODE_SIGNING_ALLOWED=NO -IDEBuildingContinueBuildingAfterErrors=YES > /tmp/build.log 2>&1; then
+            echo "FACTORY build ok $(( $(date +%s) - t ))"
+          else
+            echo "FACTORY build fail $(( $(date +%s) - t )) errors=$(grep -c 'error:' /tmp/build.log)"
+            # chỉ in thông điệp lỗi (bỏ đường dẫn, ≤120 ký tự) — không in code
+            grep -h 'error:' /tmp/build.log | sed -E 's#^.*/([^/:]+:[0-9]+):[0-9]+: error: ?#\1 #' | cut -c1-140 | sort -u | head -40 | sed 's/^/FACTORY build_err /'; exit 1
+          fi
+      - name: app
+        run: |
+          app=$(find /tmp/dd-mac/Build/Products -maxdepth 2 -name '*.app' | head -1)
+          codesign --force --deep -s - "$app" >/dev/null 2>&1 && echo "FACTORY adhoc_sign ok" || echo "FACTORY adhoc_sign fail"
+          bid=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")
+          echo "APP=$app" >> "$GITHUB_ENV"; echo "FACTORY bundle $bid"
+          bash runner/scripts/factory/grant-tcc.sh "$bid"
+          command -v ffmpeg >/dev/null || brew install -q ffmpeg >/dev/null 2>&1; echo "FACTORY ffmpeg $(command -v ffmpeg >/dev/null && echo ok || echo fail)"
+      - name: launch
+        run: |
+          t=$(date +%s)
+          open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=21000 --stdout /tmp/app.log --stderr /tmp/app.err "$APP"
+          for i in $(seq 1 90); do grep -q 'HARNESS agent READY' /tmp/app.log 2>/dev/null && break; sleep 2; done
+          line=$(grep -m1 'HARNESS agent READY' /tmp/app.log || true)
+          [ -n "$line" ] || { echo "FACTORY ready fail $(( $(date +%s) - t )) running=$(pgrep -f "$APP" >/dev/null && echo y || echo n) crashes=$(ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci cutcut)"; exit 1; }
+          port=$(sed -E 's/.*port=([0-9]+).*/\1/' <<<"$line"); key=$(sed -E 's/.*key=([^ ]+).*/\1/' <<<"$line"); folder=$(sed -E 's/.*folder=(.*)$/\1/' <<<"$line")
+          echo "::add-mask::$key"
+          { echo "MCP_PORT=$port"; echo "MCP_KEY=$key"; echo "MCP_FOLDER=$folder"; } >> "$GITHUB_ENV"
+          echo "FACTORY ready ok $(( $(date +%s) - t )) port=$port"
+      - uses: actions/checkout@v4
+        if: env.SKIP != '1'
+        with: { repository: nguyenphp/clip-factory, token: '${{ secrets.FACTORY_PAT || secrets.VIBECUT_PAT }}', path: cf, fetch-depth: 1 }
+      - name: worker
+        if: env.SKIP != '1'
+        env:
+          FACTORY_API_URL: ${{ secrets.FACTORY_API_URL }}
+          FACTORY_WORKER_TOKEN: ${{ secrets.FACTORY_WORKER_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          npm i -g --silent @anthropic-ai/claude-code >/dev/null 2>&1
+          python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
+          export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID
+          start=$(date +%s); echo "FACTORY worker start"
+          (cd cf/worker && /tmp/venv/bin/python -m factory --until $((start+20400))) > /tmp/worker.log 2>&1 || echo "FACTORY worker exit $?"
+          grep '^FACTORY ' /tmp/worker.log | cut -c1-160 | tail -200 || true
+      - name: chain
+        if: always() && env.SKIP != '1'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh workflow run factory.yml -R "$GITHUB_REPOSITORY" && echo "FACTORY chain ok"
