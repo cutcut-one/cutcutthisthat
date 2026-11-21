@@ -22,7 +22,7 @@ jobs:
         with: { path: runner }
       - uses: actions/checkout@v4
         if: env.SKIP != '1'
-        with: { repository: nguyenphp/vibecut, ref: 'main', token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
+        with: { repository: nguyenphp/vibecut, ref: 'fix/xcode26-compat', token: '${{ secrets.VIBECUT_PAT }}', path: vibecut, fetch-depth: 1 }
       - name: build
         if: env.SKIP != '1'
         working-directory: vibecut
@@ -59,7 +59,7 @@ jobs:
           echo "FACTORY ready ok $(( $(date +%s) - t )) port=$port"
       - uses: actions/checkout@v4
         if: env.SKIP != '1'
-        with: { repository: nguyenphp/clip-factory, token: '${{ secrets.FACTORY_PAT || secrets.VIBECUT_PAT }}', path: cf, fetch-depth: 1 }
+        with: { repository: nguyenphp/clip-factory, ssh-key: '${{ secrets.FACTORY_SSH_KEY }}', path: cf, fetch-depth: 1 }
       - name: worker
         if: env.SKIP != '1'
         env:
