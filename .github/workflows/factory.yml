@@ -65,6 +65,7 @@ jobs:
         env:
           FACTORY_API_URL: ${{ secrets.FACTORY_API_URL }}
           FACTORY_WORKER_TOKEN: ${{ secrets.FACTORY_WORKER_TOKEN }}
+          FACTORY_QUOTA_PROBE: "1"  # đo % hạn mức Claude trước/sau mỗi clip
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # nhiều tài khoản: hết hạn mức cái này worker tự chuyển cái kế (bot runner dùng _1.._3 nhưng không chạy cùng lúc nhà máy)
           FACTORY_CLAUDE_TOKENS: "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }},${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_1 }},${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_2 }},${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}"
