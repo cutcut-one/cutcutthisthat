@@ -9,7 +9,7 @@ permissions: { contents: read, actions: write }
 jobs:
   factory:
     # nhiều máy dựng song song: mỗi slot 1 máy macOS, cùng nhận việc từ server (claim có khoá, không trùng việc)
-    strategy: { fail-fast: false, matrix: { slot: [1, 2, 3] } }
+    strategy: { fail-fast: false, matrix: { slot: [1, 2, 3, 4, 5] } }  # GitHub free: tối đa 5 máy macOS cùng lúc
     runs-on: macos-15
     timeout-minutes: 360
     defaults: { run: { shell: bash } }
