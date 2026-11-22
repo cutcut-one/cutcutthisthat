@@ -20,6 +20,8 @@ jobs:
         run: |
           t0=$(date +%s); pip -q install vieneu edge-tts >/dev/null 2>&1; echo "BENCH install_sec=$(( $(date +%s) - t0 ))"
           (lscpu 2>/dev/null | grep -E 'Model name|^CPU\(s\)'; lscpu 2>/dev/null | grep -o 'avx512_vnni\|avx_vnni' | sort -u; sysctl -n machdep.cpu.brand_string hw.ncpu 2>/dev/null) | sed 's/^/BENCH cpu /'
+      - name: vnni
+        run: lscpu 2>/dev/null | grep -q vnni && echo VNNI=1 >> $GITHUB_ENV || true
       - name: đo
         shell: python
         run: |
@@ -32,7 +34,7 @@ jobs:
           asyncio.run(edge_tts.Communicate(TEXT, "vi-VN-HoaiMyNeural").save("e.mp3"))
           print(f"BENCH edge_tts sec={time.time()-t:.1f}", flush=True)
           from vieneu import Vieneu
-          for prec in ["fp32"]:  # int8 cần VNNI (EPYC 7763 / Apple không có) → chỉ fp32
+          for prec in (["fp32", "int8"] if os.environ.get("VNNI") else ["fp32"]):  # int8 cần VNNI
               t = time.time()
               v = Vieneu(precision=prec) if prec != "fp32" else Vieneu()
               print(f"BENCH vieneu_{prec} load_sec={time.time()-t:.1f}", flush=True)
