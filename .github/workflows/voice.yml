@@ -36,5 +36,11 @@ jobs:
           echo "FACTORY voice setup $(( $(date +%s) - t ))s cpu=$(nproc) vnni=$(grep -c -m1 vnni /proc/cpuinfo)"
           export FACTORY_RUNNER_ID=voice-$GITHUB_RUN_ID-${{ matrix.slot }}
           until=$(( $(date +%s) + 20700 ))
-          (cd cf/worker && python -u -m factory.voice_runner --until $until) 2>>/tmp/voice.err | grep --line-buffered '^FACTORY ' | cut -c1-160
-          echo "FACTORY voice exit err_lines=$(wc -l < /tmp/voice.err)"
+          while [ "$(date +%s)" -lt $(( until - 300 )) ]; do
+            (cd cf/worker && python -u -m factory.voice_runner --until $until) 2>>/tmp/voice.err | grep --line-buffered '^FACTORY ' | cut -c1-160
+            rc=${PIPESTATUS[0]}
+            [ "$rc" = 4 ] || break  # 4 = có code mới trên main → kéo về rồi chạy lại
+            git -C cf fetch -q origin main && git -C cf reset -q --hard origin/main && pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
+            echo "FACTORY voice code_pulled $(git -C cf rev-parse --short HEAD)"
+          done
+          echo "FACTORY voice exit rc=$rc err_lines=$(wc -l < /tmp/voice.err)"

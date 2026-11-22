@@ -88,6 +88,10 @@ jobs:
             # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
             (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $until) 2>>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160
             rc=${PIPESTATUS[0]}
+            if [ "$rc" = 4 ]; then  # có code mới trên main → kéo về, chạy tiếp (không dựng bằng code cũ)
+              git -C cf fetch -q origin main && git -C cf reset -q --hard origin/main && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
+              echo "FACTORY code_pulled $(git -C cf rev-parse --short HEAD)"; continue
+            fi
             [ "$rc" = 3 ] || break
             echo "FACTORY app_restart"; relaunch || { echo "FACTORY app_restart_fail"; break; }
           done
