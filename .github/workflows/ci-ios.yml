@@ -62,6 +62,6 @@ jobs:
           [ -f app/google-services.json ] || echo '{"project_info":{"project_id":"ci"},"client":[]}' > /dev/null
           r=0; ./gradlew -q :app:compileDebugKotlin :app:testDebugUnitTest > /tmp/android.log 2>&1 || r=$?
           sum="android: $([ $r = 0 ] && echo xanh || echo ĐỎ)"; echo "$sum"
-          { echo "### CI Android \`${{ inputs.ref }}\` — $sum"; echo '```'; grep -E '^e: |FAILED|What went wrong' -A2 /tmp/android.log | sed 's#.*/vibecut/##' | head -30; echo '```'; } > /tmp/report.md
+          { echo "### CI Android \`${{ inputs.ref }}\` — $sum"; echo '```'; grep -E '^e: |FAILED|What went wrong|Could not|> ' -A3 /tmp/android.log | sed 's#.*/vibecut/##' | head -60; echo '```'; } > /tmp/report.md
           gh api repos/nguyenphp/vibecut/commits/$(git rev-parse HEAD)/comments -F body=@/tmp/report.md >/dev/null 2>&1 || echo "không gửi được báo cáo"
           [ $r = 0 ]
