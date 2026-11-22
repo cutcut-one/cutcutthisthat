@@ -1,0 +1,37 @@
+name: voice-bench
+# đo tốc độ tạo giọng VieNeu-TTS (CPU) so với edge-tts trên máy macOS (máy dựng) và Linux (ứng viên máy giọng)
+on: workflow_dispatch
+jobs:
+  bench:
+    strategy: { fail-fast: false, matrix: { os: [macos-15, ubuntu-latest] } }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: cài
+        run: |
+          t0=$(date +%s); pip -q install vieneu edge-tts >/dev/null 2>&1; echo "BENCH install_sec=$(( $(date +%s) - t0 ))"
+          (lscpu 2>/dev/null | grep -E 'Model name|^CPU\(s\)'; lscpu 2>/dev/null | grep -o 'avx512_vnni\|avx_vnni' | sort -u; sysctl -n machdep.cpu.brand_string hw.ncpu 2>/dev/null) | sed 's/^/BENCH cpu /'
+      - name: đo
+        shell: python
+        run: |
+          import time, asyncio, subprocess, os, platform
+          TEXT = ("Nhìn căn nhà sạch bóng này chưa, trước đó nó không như vậy đâu các chị. Ban đầu đồ đạc bừa bộn, sàn nhà thì bẩn lắm luôn. "
+                  "Em bắt đầu dọn từng góc, lau sàn thật kỹ cho sạch hết bụi bẩn. Rồi chà sàn bằng tay, chỗ nào cứng đầu thì chà thêm lần nữa. "
+                  "Sang khu bếp, em dọn gọn gàng rồi sắp xếp lại đồ cho ngăn nắp. Cuối cùng sàn bóng, nhà thoáng, nhìn là thấy dễ chịu liền.")
+          import edge_tts
+          t = time.time()
+          asyncio.run(edge_tts.Communicate(TEXT, "vi-VN-HoaiMyNeural").save("e.mp3"))
+          print(f"BENCH edge_tts sec={time.time()-t:.1f}", flush=True)
+          from vieneu import Vieneu
+          for prec in (["fp32", "int8"] if "x86" in platform.machine() or platform.machine() == "x86_64" else ["fp32"]):
+              t = time.time()
+              v = Vieneu(precision=prec) if prec != "fp32" else Vieneu()
+              print(f"BENCH vieneu_{prec} load_sec={time.time()-t:.1f}", flush=True)
+              voices = v.list_preset_voices()
+              name = voices[0][0]
+              t = time.time(); a = v.infer("Xin chào các chị.", voice=name); print(f"BENCH vieneu_{prec} warm_sec={time.time()-t:.1f}", flush=True)
+              t = time.time(); a = v.infer(TEXT, voice=name); s = time.time() - t
+              dur = len(a) / 48000
+              print(f"BENCH vieneu_{prec} voice={name} audio_sec={dur:.1f} synth_sec={s:.1f} rtf={s/dur:.2f}", flush=True)
