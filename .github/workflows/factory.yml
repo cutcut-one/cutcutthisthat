@@ -84,6 +84,7 @@ jobs:
             export CUTCUT_MCP_PORT=$(sed -E 's/.*port=([0-9]+).*/\1/' <<<"$line") CUTCUT_MCP_KEY=$(sed -E 's/.*key=([^ ]+).*/\1/' <<<"$line") CUTCUT_AGENT_FOLDER=$(sed -E 's/.*folder=(.*)$/\1/' <<<"$line")
             echo "::add-mask::$CUTCUT_MCP_KEY"
           }
+          set +e +o pipefail  # Actions chạy bash -eo pipefail: worker thoát mã 3/4 (mở lại app / kéo code) sẽ giết cả bước
           while [ "$(date +%s)" -lt $(( until - 1200 )) ]; do
             # in dòng FACTORY ngay khi có (log câm: chỉ id/mã/số); mọi thứ khác (traceback) chỉ vào file
             (cd cf/worker && /tmp/venv/bin/python -u -m factory --until $until) 2>>/tmp/worker.err | grep --line-buffered '^FACTORY ' | cut -c1-160

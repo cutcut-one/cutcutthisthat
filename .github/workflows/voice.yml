@@ -36,6 +36,7 @@ jobs:
           echo "FACTORY voice setup $(( $(date +%s) - t ))s cpu=$(nproc) vnni=$(grep -c -m1 vnni /proc/cpuinfo)"
           export FACTORY_RUNNER_ID=voice-$GITHUB_RUN_ID-${{ matrix.slot }}
           until=$(( $(date +%s) + 20700 ))
+          set +e +o pipefail  # Actions chạy bash -eo pipefail: mã 4 (kéo code mới) sẽ giết cả bước
           while [ "$(date +%s)" -lt $(( until - 300 )) ]; do
             (cd cf/worker && python -u -m factory.voice_runner --until $until) 2>>/tmp/voice.err | grep --line-buffered '^FACTORY ' | cut -c1-160
             rc=${PIPESTATUS[0]}
