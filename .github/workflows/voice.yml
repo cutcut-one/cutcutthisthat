@@ -1,0 +1,40 @@
+name: voice
+# Máy giọng: 2 runner Linux nạp VieNeu-TTS 1 lần, nhận lời dẫn liên tục từ server clip-factory, đọc, đẩy mp3 lên kho.
+# Linux không tính vào giới hạn 5 máy macOS. Repo PUBLIC: chỉ in dòng "FACTORY …", không in lời dẫn, không upload artifact.
+on:
+  workflow_dispatch:
+  schedule: [{ cron: '*/15 * * * *' }]
+concurrency: { group: voice, cancel-in-progress: false }
+permissions: { contents: read, actions: read }
+jobs:
+  voice:
+    strategy: { fail-fast: false, matrix: { slot: [1, 2] } }
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults: { run: { shell: bash } }
+    steps:
+      - name: guard
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=$(gh run list -R "$GITHUB_REPOSITORY" -w voice.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
+          [ "$n" = 0 ] || { echo "FACTORY skip other_running"; echo SKIP=1 >> "$GITHUB_ENV"; }
+      - uses: actions/checkout@v4
+        if: env.SKIP != '1'
+        with: { repository: nguyenphp/clip-factory, ssh-key: '${{ secrets.FACTORY_SSH_KEY }}', path: cf, fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        if: env.SKIP != '1'
+        with: { python-version: '3.12' }
+      - name: run
+        if: env.SKIP != '1'
+        env:
+          FACTORY_API_URL: ${{ secrets.FACTORY_API_URL }}
+          FACTORY_WORKER_TOKEN: ${{ secrets.FACTORY_WORKER_TOKEN }}
+        run: |
+          t=$(date +%s)
+          (command -v ffmpeg >/dev/null || { sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg; }) >/dev/null 2>&1
+          pip -q install vieneu -r cf/worker/requirements.txt >/dev/null 2>&1
+          echo "FACTORY voice setup $(( $(date +%s) - t ))s cpu=$(nproc) vnni=$(grep -c -m1 vnni /proc/cpuinfo)"
+          export FACTORY_RUNNER_ID=voice-$GITHUB_RUN_ID-${{ matrix.slot }}
+          until=$(( $(date +%s) + 20700 ))
+          (cd cf/worker && python -u -m factory.voice_runner --until $until) 2>>/tmp/voice.err | grep --line-buffered '^FACTORY ' | cut -c1-160
+          echo "FACTORY voice exit err_lines=$(wc -l < /tmp/voice.err)"
