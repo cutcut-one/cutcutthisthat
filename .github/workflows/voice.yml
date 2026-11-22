@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   schedule: [{ cron: '*/15 * * * *' }]
 concurrency: { group: voice, cancel-in-progress: false }
-permissions: { contents: read, actions: read }
+permissions: { contents: read, actions: write }
 jobs:
   voice:
     strategy: { fail-fast: false, matrix: { slot: [1, 2] } }
@@ -45,3 +45,14 @@ jobs:
             echo "FACTORY voice code_pulled $(git -C cf rev-parse --short HEAD)"
           done
           echo "FACTORY voice exit rc=$rc err_lines=$(wc -l < /tmp/voice.err)"
+  chain:
+    # lịch */15 của GitHub hay bỏ lượt (22/11: 6 tiếng không chạy → máy giọng tắt, clip rơi về giọng dự phòng)
+    # → hết ca thì tự bật ca sau, trừ khi đã có lượt voice khác đang chạy
+    needs: voice
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=$(gh run list -R "$GITHUB_REPOSITORY" -w voice.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
+          [ "$n" = 0 ] && gh workflow run voice.yml -R "$GITHUB_REPOSITORY" && echo "FACTORY chain ok" || echo "FACTORY chain skip"
