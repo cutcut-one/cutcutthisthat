@@ -58,6 +58,9 @@ jobs:
           TEVO_NEXUS_URL: ${{ secrets.TEVO_NEXUS_URL }}
           TEVO_NEXUS_USERNAME: ${{ secrets.TEVO_NEXUS_USERNAME }}
           TEVO_NEXUS_PASSWORD: ${{ secrets.TEVO_NEXUS_PASSWORD }}
+          ORG_GRADLE_PROJECT_tevoNexusMavenUrl: ${{ secrets.TEVO_NEXUS_URL }}
+          ORG_GRADLE_PROJECT_tevoNexusUsername: ${{ secrets.TEVO_NEXUS_USERNAME }}
+          ORG_GRADLE_PROJECT_tevoNexusPassword: ${{ secrets.TEVO_NEXUS_PASSWORD }}
         run: |
           [ -f app/google-services.json ] || echo '{"project_info":{"project_id":"ci"},"client":[]}' > /dev/null
           r=0; ./gradlew -q :app:compileDebugKotlin :app:testDebugUnitTest > /tmp/android.log 2>&1 || r=$?
