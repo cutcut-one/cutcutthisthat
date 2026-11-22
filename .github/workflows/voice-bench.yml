@@ -3,10 +3,14 @@ name: voice-bench
 on:
   workflow_dispatch:
     inputs:
-      os: { default: '["ubuntu-latest"]' }
+      os:
+        default: '["ubuntu-latest"]'
 jobs:
   bench:
-    strategy: { fail-fast: false, matrix: { os: ${{ fromJSON(inputs.os) }} } }
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
