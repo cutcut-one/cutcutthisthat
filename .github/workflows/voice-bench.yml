@@ -1,9 +1,12 @@
 name: voice-bench
 # đo tốc độ tạo giọng VieNeu-TTS (CPU) so với edge-tts trên máy macOS (máy dựng) và Linux (ứng viên máy giọng)
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      os: { default: '["ubuntu-latest"]' }
 jobs:
   bench:
-    strategy: { fail-fast: false, matrix: { os: [macos-15, ubuntu-latest] } }
+    strategy: { fail-fast: false, matrix: { os: ${{ fromJSON(inputs.os) }} } }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -25,12 +28,13 @@ jobs:
           asyncio.run(edge_tts.Communicate(TEXT, "vi-VN-HoaiMyNeural").save("e.mp3"))
           print(f"BENCH edge_tts sec={time.time()-t:.1f}", flush=True)
           from vieneu import Vieneu
-          for prec in (["fp32", "int8"] if "x86" in platform.machine() or platform.machine() == "x86_64" else ["fp32"]):
+          for prec in ["fp32"]:  # int8 cần VNNI (EPYC 7763 / Apple không có) → chỉ fp32
               t = time.time()
               v = Vieneu(precision=prec) if prec != "fp32" else Vieneu()
               print(f"BENCH vieneu_{prec} load_sec={time.time()-t:.1f}", flush=True)
               voices = v.list_preset_voices()
-              name = voices[0][0]
+              ids = [x[1] for x in voices]
+              name = "Mai Anh" if "Mai Anh" in ids else ids[0]
               t = time.time(); a = v.infer("Xin chào các chị.", voice=name); print(f"BENCH vieneu_{prec} warm_sec={time.time()-t:.1f}", flush=True)
               t = time.time(); a = v.infer(TEXT, voice=name); s = time.time() - t
               dur = len(a) / 48000
