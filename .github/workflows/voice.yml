@@ -54,5 +54,11 @@ jobs:
     steps:
       - env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          n=$(gh run list -R "$GITHUB_REPOSITORY" -w voice.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
-          [ "$n" = 0 ] && gh workflow run voice.yml -R "$GITHUB_REPOSITORY" && echo "FACTORY chain ok" || echo "FACTORY chain skip"
+          # 25/11: lần chain lỗi tạm (gh trả lỗi) → in "skip" → nhà máy tắt cả tiếng; thử lại 3 lần, lỗi đếm thì vẫn bật
+          for i in 1 2 3; do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" -w voice.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length") || n=0
+            q=$(gh run list -R "$GITHUB_REPOSITORY" -w voice.yml -s queued --json databaseId -q "length") || q=0
+            if [ "$n" != 0 ] || [ "$q" != 0 ]; then echo "FACTORY chain skip running=$n queued=$q"; break; fi
+            gh workflow run voice.yml -R "$GITHUB_REPOSITORY" && { echo "FACTORY chain ok"; break; }
+            echo "FACTORY chain retry $i"; sleep 20
+          done
