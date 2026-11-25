@@ -1,15 +1,31 @@
 name: factory
 # R1: nhà máy chạy nối 24/7 — CutCut + worker clip-factory nhận việc tuần tự.
 # Repo PUBLIC: log chỉ in dòng "FACTORY …" (bước, giây, tên tool, mã lỗi ngắn). Không upload artifact.
+# 25/11 owner "máy phải liên tục thay phiên": mỗi máy = 1 lượt riêng theo slot (1–4), ca lệch giờ nhau, còn ~30 phút hết ca
+# thì tự gọi máy kế nhiệm của slot khởi động trước (gối đầu, không trống). 4 máy + chừa 1 chỗ macOS cho máy đang gối đầu
+# (GitHub free tối đa 5 máy macOS). Lịch 15 phút = máy canh: slot nào không có máy thì bật.
+run-name: ${{ github.event_name == 'schedule' && 'factory keeper' || format('factory slot {0}', inputs.slot) }}
 on:
   workflow_dispatch:
+    inputs:
+      slot: { description: 'slot máy (1–4)', required: true, default: '1' }
+      secs: { description: 'giây làm việc của ca này (lệch ca lần đầu)', required: false, default: '20400' }
   schedule: [{ cron: '*/15 * * * *' }]
-concurrency: { group: factory, cancel-in-progress: false }
 permissions: { contents: read, actions: write }
 jobs:
+  keeper:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          for slot in 1 2 3 4; do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml --json displayTitle,status -L 60 \
+                  -q "[.[]|select(.displayTitle==\"factory slot $slot\" and (.status==\"in_progress\" or .status==\"queued\" or .status==\"waiting\" or .status==\"pending\"))]|length") || continue
+            if [ "$n" = 0 ]; then gh workflow run factory.yml -R "$GITHUB_REPOSITORY" -f slot=$slot && echo "FACTORY keeper start slot=$slot"; fi
+          done
   factory:
-    # nhiều máy dựng song song: mỗi slot 1 máy macOS, cùng nhận việc từ server (claim có khoá, không trùng việc)
-    strategy: { fail-fast: false, matrix: { slot: [1, 2, 3, 4, 5] } }  # GitHub free: tối đa 5 máy macOS cùng lúc
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 360
     defaults: { run: { shell: bash } }
@@ -17,8 +33,10 @@ jobs:
       - name: guard
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length")
-          [ "$n" = 0 ] || { echo "FACTORY skip other_running"; echo SKIP=1 >> "$GITHUB_ENV"; }
+          # slot đã có ≥2 máy (1 đang làm + 1 đang gối đầu) thì máy này thừa → nghỉ
+          n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml --json databaseId,displayTitle,status -L 60 \
+                -q "[.[]|select(.databaseId!=${{ github.run_id }} and .displayTitle==\"factory slot ${{ inputs.slot }}\" and .status==\"in_progress\")]|length") || n=0
+          [ "$n" -lt 2 ] || { echo "FACTORY skip slot_full"; echo SKIP=1 >> "$GITHUB_ENV"; }
       - uses: actions/checkout@v4
         if: env.SKIP != '1'
         with: { path: runner }
@@ -71,11 +89,16 @@ jobs:
           # owner 22/11: dựng + đo hạn mức CHỈ bằng tài khoản Iron Woman (_3), không dùng Captain Queenie
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}
           FACTORY_CLAUDE_TOKENS: "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}"
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm i -g --silent @anthropic-ai/claude-code >/dev/null 2>&1
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install -r cf/worker/requirements.txt >/dev/null 2>&1
-          export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID-${{ matrix.slot }}
-          start=$(date +%s); until=$((start+20400)); echo "FACTORY worker start"
+          export CUTCUT_MCP_PORT=$MCP_PORT CUTCUT_MCP_KEY=$MCP_KEY CUTCUT_AGENT_FOLDER=$MCP_FOLDER FACTORY_RUNNER_ID=gh-$GITHUB_RUN_ID-${{ inputs.slot }}
+          secs=${{ inputs.secs }}; [ "$secs" -ge 1800 ] && [ "$secs" -le 20400 ] || secs=20400
+          start=$(date +%s); until=$((start+secs)); echo "FACTORY worker start slot=${{ inputs.slot }} secs=$secs"
+          # gối đầu: trước khi ngừng nhận việc (until-1200) ~10 phút → gọi máy kế nhiệm của slot (khởi động ~7 phút)
+          ( sleep $(( secs - 1800 )); gh workflow run factory.yml -R "$GITHUB_REPOSITORY" -f slot=${{ inputs.slot }} >/dev/null 2>&1 \
+              && echo "FACTORY relay ok slot=${{ inputs.slot }}" || echo "FACTORY relay fail" ) &
           relaunch() {  # CutCut treo/chết (worker thoát mã 3): tắt hẳn, mở lại, đọc cổng/khoá mới
             pkill -f "$APP" || true; sleep 5; : > /tmp/app.log
             open -n --env CUTCUT_DEMO=agent_accept --env CUTCUT_AGENT_SECS=$(( until - $(date +%s) + 600 )) --stdout /tmp/app.log --stderr /tmp/app.err "$APP" --args -asr.engine apple
@@ -97,19 +120,3 @@ jobs:
             echo "FACTORY app_restart"; relaunch || { echo "FACTORY app_restart_fail"; break; }
           done
           echo "FACTORY worker done err_lines=$(wc -l < /tmp/worker.err)"
-  chain:
-    # nối lượt sau khi cả 3 máy xong (1 lần cho cả lượt), trừ khi đã có lượt factory khác đang chạy
-    needs: factory
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - env: { GH_TOKEN: '${{ github.token }}' }
-        run: |
-          # 25/11: lần chain lỗi tạm (gh trả lỗi) → in "skip" → nhà máy tắt cả tiếng; thử lại 3 lần, lỗi đếm thì vẫn bật
-          for i in 1 2 3; do
-            n=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml -s in_progress --json databaseId -q "[.[]|select(.databaseId!=${{ github.run_id }})]|length") || n=0
-            q=$(gh run list -R "$GITHUB_REPOSITORY" -w factory.yml -s queued --json databaseId -q "length") || q=0
-            if [ "$n" != 0 ] || [ "$q" != 0 ]; then echo "FACTORY chain skip running=$n queued=$q"; break; fi
-            gh workflow run factory.yml -R "$GITHUB_REPOSITORY" && { echo "FACTORY chain ok"; break; }
-            echo "FACTORY chain retry $i"; sleep 20
-          done
